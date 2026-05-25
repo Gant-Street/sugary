@@ -1,0 +1,31 @@
+id = "public-martian-ranker-fresh-b-v1"
+description = "Unofficial fresh-slice B for Evidence/Refutation Ranker v1. Martian cases 76-100 only; not an official benchmark score."
+suite = "martian-offline"
+# This manifest is a forward path for larger Martian snapshots. At Martian SHA
+# 279f279, the offline benchmark_data.json has only 50 cases.
+limit = 25
+offset = 75
+replay_mode = "cache-first"
+max_cost_usd = 0.00
+max_duration_seconds = 7200
+
+[[methods]]
+id = "public-pcrs-static-codex-low-team"
+team = "teams/public-pcrs-static-codex-low-team.toml"
+
+[[reviewers]]
+id = "codex-gpt-5.5-xhigh"
+type = "command"
+enabled = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_exec_reviewer.exs"]
+timeout_ms = 240000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "strong_validation"]
+env = ["SUGARY_REVIEWER_ID=codex-gpt-5.5-xhigh", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=xhigh", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=180000"]

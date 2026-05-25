@@ -208,3 +208,68 @@ Interpretation:
 Next research move:
 
 Do not tune another threshold directly on the fresh slice. Build a real evidence/refutation scorer that predicts which second-ranked comments are worth publishing. The next target should beat raw `codex-gpt-5.5-xhigh` on a locked fresh slice with no added noise and no comment-count regression, while preserving at least one unique true positive.
+
+## 2026-05-25: Evidence/Refutation Ranker v1 Stretch
+
+Command sequence:
+
+```sh
+mix run -e 'IO.puts(Sugary.EvidenceRefutationRanker.tune_and_lock!(source_run: ".sugary/research/runs/20260525T183827Z-public-martian-pcrs-transfer-v1", method_id: "public-pcrs-static-codex-low-team", baseline_id: "codex-gpt-5.5-xhigh", suite: "martian-offline", limit: 25, offset: 0, id: "evidence-refutation-ranker-v1-dev"))'
+elixir scripts/benchmarks/fetch_martian_diffs.exs --limit 25 --offset 50
+elixir scripts/benchmarks/fetch_martian_diffs.exs --limit 25 --offset 75
+mix run -e 'IO.puts(Sugary.EvidenceRefutationRanker.evaluate!(lock_path: ".sugary/research/runs/20260525T224028Z-evidence-refutation-ranker-v1-dev/ranker-lock.json", source_run: ".sugary/research/runs/20260525T215029Z-public-martian-ranking-fresh-v1", baseline_id: "codex-gpt-5.5-xhigh", suite: "martian-offline", limit: 25, offset: 25, id: "evidence-refutation-ranker-v1-holdout-26-50"))'
+mix run -e 'IO.puts(Sugary.EvidenceRefutationRanker.aggregate!(evaluation_dirs: [".sugary/research/runs/20260525T224152Z-evidence-refutation-ranker-v1-holdout-26-50"], id: "evidence-refutation-ranker-v1-available-holdout-aggregate"))'
+```
+
+Run artifacts:
+
+```text
+.sugary/research/runs/20260525T224028Z-evidence-refutation-ranker-v1-dev
+.sugary/research/runs/20260525T224152Z-evidence-refutation-ranker-v1-holdout-26-50
+.sugary/research/runs/20260525T224213Z-evidence-refutation-ranker-v1-available-holdout-aggregate
+```
+
+Scope:
+
+- Benchmark: Martian Code Review Bench offline, local smoke only.
+- Dev slice: cases 1-25.
+- Intended stretch slice: cases 51-100.
+- Actual available holdout: cases 26-50, because upstream `benchmark_data.json` at Martian SHA `279f279` contains 50 cases total.
+- Official score: no.
+- Leaderboard claim: no.
+- Fresh tuning: no. The ranker was locked before evaluation on cases 26-50.
+
+Dev-slice locked policy:
+
+| Policy | Recall | F1 | Usefulness | SNR | Avg comments/PR | Noise | Hits | Utility |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-xhigh` | 0.284 | 0.368 | 0.525 | 1.105 | 1.600 | 19 | 21 | -2.000 |
+| `balanced-top2-t2.3` | 0.324 | 0.449 | 0.727 | 2.667 | 1.320 | 9 | 24 | 11.700 |
+
+Available-holdout result:
+
+| Method | Recall | F1 | Usefulness | SNR | Avg comments/PR | Noise | Hits | Utility |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-xhigh` | 0.190 | 0.293 | 0.632 | 1.714 | 0.760 | 7 | 12 | 3.100 |
+| `balanced-top2-t2.3` | 0.222 | 0.322 | 0.583 | 1.400 | 0.960 | 10 | 14 | 1.600 |
+
+Stretch target:
+
+- Beat raw xhigh F1: passed.
+- Preserve usefulness: failed.
+- Preserve SNR: failed.
+- Do not increase noise: failed.
+- Do not increase comments/PR: failed.
+- Add at least two unique true positives: passed.
+- Paired wins > losses: passed, 8 wins / 7 losses / 10 ties.
+
+Interpretation:
+
+- The evidence/refutation scorer did not solve publishing. It found additional true positives, but it still admitted too many second-ranked false positives.
+- The result strengthens the diagnosis from the previous loop: the candidate pool contains useful extra signal, but our current evidence features are too weak to separate good second comments from noise.
+- Failure analysis reported 9 admitted false positives and 1 suppressed true positive on cases 26-50. Average false-positive publish score was 4.665, which means the current features are overconfident on noisy claims rather than merely setting the threshold too low.
+- The planned cases 51-100 stretch was blocked by public benchmark data availability, not tool failure.
+
+Next research move:
+
+Stop optimizing scalar thresholds. Build an adversarial refuter that produces explicit counterarguments for each candidate claim before ranking. The next target should reduce false-positive publish scores on the available holdout without using holdout oracle labels for tuning.
