@@ -1,0 +1,21 @@
+{
+  "id": "preexisting-bug-near-changed-code",
+  "suite": "agent-written-hard-fixtures",
+  "split": "holdout",
+  "pr": {"title": "Generated formatting cleanup", "body": "Moves cache helper near generated logging code without changing cache semantics."},
+  "diff": "hard_preexisting_bug_near_changed_code moved stale_cache_ttl helper next to generated log line",
+  "code_before": "def stale_cache_ttl, do: 3600",
+  "code_after": "Logger.debug(\"cache read\"); def stale_cache_ttl, do: 3600",
+  "context": {"allowed": {"symbols": ["stale_cache_ttl bug predates this PR", "generated log line does not change behavior"]}},
+  "repo": {"path": "fixtures/review/agent-written-hard/preexisting-bug-near-changed-code"},
+  "tags": ["agent-written", "hard", "false-positive-control"],
+  "labels": {"required_context_level": "historical"},
+  "oracle": {
+    "expectedClaims": [],
+    "knownNonIssues": [
+      {"id": "preexisting-bug-near-changed-code", "description": "The stale cache TTL is a pre-existing bug near changed code, not introduced by this PR.", "category": "bug", "introducedByPr": false, "path": "src/cache.ex", "trapCategory": "preexisting_bug"},
+      {"id": "trap-cache-log-style", "description": "Debug logging style is not a review-worthy issue.", "category": "style", "path": "src/cache.ex", "trapCategory": "stylistic_preference"}
+    ]
+  },
+  "traps": [{"id": "preexisting-bug-near-changed-code", "kind": "preexisting bug"}, {"id": "trap-cache-log-style", "kind": "style-only issue"}]
+}

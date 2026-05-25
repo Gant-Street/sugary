@@ -1,0 +1,15 @@
+{
+  "id": "integration-contract-mismatch",
+  "suite": "agent-written-pr",
+  "pr": {"title": "Generated schema v2 payload", "body": "Agent updated integration payload."},
+  "diff": "schema_v2 sends amount_cents as string despite consumer contract",
+  "context": {"allowed": {"symbols": ["consumer contract amount_cents integer"]}},
+  "repo": {"path": "fixtures/review/integration-contract-mismatch"},
+  "tags": ["agent-written", "contract"],
+  "oracle": {
+    "expectedClaims": [
+      {"id": "integration-contract-mismatch", "description": "Generated schema v2 payload does not match the consumer contract.", "category": "bug", "severity": "high", "path": "src/integration.ex"}
+    ],
+    "knownNonIssues": []
+  }
+}

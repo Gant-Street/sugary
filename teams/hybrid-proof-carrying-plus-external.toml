@@ -1,0 +1,18 @@
+id = "hybrid-proof-carrying-plus-external"
+description = "Hybrid team combining the locked local hard-specialist team with an external pack reviewer."
+failure_policy = "continue"
+merge_strategy = "dedupe_by_key_location_and_claim"
+max_published_claims = 3
+metadata = { purpose = "hybrid-external-smoke" }
+artifact_fields = ["raw_claims", "merged_claims", "provenance"]
+
+[[reviewers]]
+id = "hard-specialist-team"
+type = "team"
+path = "teams/hard-specialist-team.toml"
+
+[[reviewers]]
+id = "fixture-json-reviewer"
+type = "pack_reviewer"
+pack = "reviewer-packs/external-real-pack-v0.toml"
+reviewer = "fixture-json-reviewer"

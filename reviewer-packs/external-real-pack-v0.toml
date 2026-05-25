@@ -1,0 +1,81 @@
+id = "external-real-pack-v0"
+description = "Opt-in wrappers for real external reviewers plus a local JSON fixture reviewer for smoke tests."
+metadata = { purpose = "external-real-reviewer-smoke", benchmark_claims = "none" }
+
+[[reviewers]]
+id = "semgrep-json"
+type = "command"
+enabled = false
+required_executable = "semgrep"
+command = "elixir"
+args = ["scripts/reviewers/semgrep_reviewer.exs"]
+timeout_ms = 120000
+capabilities = ["static_analysis", "security"]
+cost_model = "free_local"
+requires_network = false
+requires_secrets = []
+
+[[reviewers]]
+id = "opencode-json"
+type = "command"
+enabled = false
+required_executable = "opencode"
+command = "scripts/reviewers/opencode_reviewer.sh"
+args = []
+timeout_ms = 120000
+capabilities = ["llm", "repo_navigation"]
+cost_model = "user_provider_key"
+requires_network = true
+requires_secrets = []
+
+[[reviewers]]
+id = "claude-code-json"
+type = "command"
+enabled = false
+required_executable = "claude"
+command = "scripts/reviewers/claude_code_reviewer.sh"
+args = []
+timeout_ms = 120000
+capabilities = ["llm", "repo_navigation"]
+cost_model = "user_provider_key"
+requires_network = true
+requires_secrets = ["ANTHROPIC_API_KEY"]
+
+[[reviewers]]
+id = "codex-json"
+type = "command"
+enabled = false
+required_executable = "codex"
+command = "scripts/reviewers/codex_reviewer.sh"
+args = []
+timeout_ms = 120000
+capabilities = ["llm", "repo_navigation"]
+cost_model = "user_provider_key"
+requires_network = true
+requires_secrets = ["CODEX_API_KEY"]
+
+[[reviewers]]
+id = "generic-llm-reviewer"
+type = "command"
+enabled = false
+required_executable = "elixir"
+command = "elixir"
+args = ["scripts/reviewers/text_to_reviewer_result.exs"]
+timeout_ms = 120000
+capabilities = ["llm", "text_normalization"]
+cost_model = "user_provider_key"
+requires_network = true
+requires_secrets = ["OPENAI_API_KEY"]
+
+[[reviewers]]
+id = "fixture-json-reviewer"
+type = "command"
+enabled = true
+required_executable = "elixir"
+command = "elixir"
+args = ["scripts/reviewers/generic_json_reviewer.exs"]
+timeout_ms = 5000
+capabilities = ["external_fixture", "json"]
+cost_model = "free_local"
+requires_network = false
+requires_secrets = []

@@ -1,0 +1,22 @@
+id = "public-hybrid-smoke-v0"
+description = "Unofficial local smoke run. Not an official benchmark score. Hybrid local-plus-external comparison on Martian offline."
+suite = "martian-offline"
+replay_mode = "cache-first"
+
+[[methods]]
+id = "baseline-diff-only"
+reviewer = "baseline-diff-only"
+
+[[methods]]
+id = "locked-hard-specialist-candidate"
+team = "teams/hard-specialist-team.toml"
+
+[[methods]]
+id = "fixture-json-reviewer"
+type = "pack_reviewer"
+pack = "reviewer-packs/external-real-pack-v0.toml"
+reviewer = "fixture-json-reviewer"
+
+[[methods]]
+id = "hybrid-proof-carrying-plus-external"
+team = "teams/hybrid-proof-carrying-plus-external.toml"

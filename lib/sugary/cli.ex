@@ -1,0 +1,171 @@
+defmodule Sugary.CLI do
+  def main(args) do
+    args
+    |> dispatch()
+    |> handle_result()
+  rescue
+    error ->
+      IO.puts(:stderr, Exception.message(error))
+      System.halt(1)
+  end
+
+  defp dispatch(["research", "init"]) do
+    Sugary.Runner.init_research!()
+    {:ok, "initialized .sugary/research"}
+  end
+
+  defp dispatch(["bench", "public", "list"]) do
+    {:ok, Sugary.PublicBenchmarks.list() |> Sugary.PublicBenchmarks.render_list()}
+  end
+
+  defp dispatch(["bench", "list" | rest]) do
+    opts = parse_opts(rest)
+
+    case Map.get(opts, "suite") do
+      nil ->
+        public =
+          Sugary.PublicBenchmarks.list()
+          |> Enum.map(&%{id: &1.benchmark, cases: "unknown", source: &1.status})
+
+        {:ok, Sugary.Json.encode!(Sugary.Fixtures.list_suites() ++ public)}
+
+      suite when suite in ["martian-offline", "cr-bench"] ->
+        limit = opts |> Map.get("limit", "3") |> parse_int()
+        {:ok, Sugary.Json.encode!(Sugary.PublicBenchmarks.inspect_cases(suite, limit: limit))}
+
+      suite ->
+        {:ok, Sugary.Json.encode!(Sugary.Fixtures.load_suite!(suite))}
+    end
+  end
+
+  defp dispatch(["bench", "inspect" | rest]) do
+    opts = parse_opts(rest)
+    suite = Map.fetch!(opts, "suite")
+    limit = opts |> Map.get("limit", "3") |> parse_int()
+
+    {:ok, Sugary.Json.encode!(Sugary.PublicBenchmarks.inspect_cases(suite, limit: limit))}
+  end
+
+  defp dispatch(["bench", "fetch", suite | rest]) when suite in ["martian-offline", "cr-bench"] do
+    _opts = parse_opts(rest)
+
+    case Sugary.PublicBenchmarks.fetch(suite, local_only: true) do
+      {:ok, path} -> {:ok, "#{suite} located at #{path}"}
+      {:error, message} -> {:error, message}
+    end
+  end
+
+  defp dispatch(["bench", "run" | rest]) do
+    opts = parse_opts(rest)
+    suite = Map.fetch!(opts, "suite")
+    method = Map.fetch!(opts, "method")
+    limit = opts |> Map.get("limit", "3") |> parse_int()
+    split = Map.get(opts, "split")
+    run_dir = Sugary.Runner.run_bench!(suite, method, limit: limit, split: split)
+    {:ok, run_dir}
+  end
+
+  defp dispatch(["bench", "compare" | rest]) do
+    opts = parse_opts_multi(rest)
+    runs = Map.get(opts, "run", [])
+
+    if runs == [] do
+      {:error, "bench compare requires at least one --run <path>"}
+    else
+      {:ok, runs |> Sugary.PublicBenchmarks.compare() |> Sugary.PublicBenchmarks.render_compare()}
+    end
+  end
+
+  defp dispatch(["experiment", "run", path | rest]) do
+    opts = parse_opts(rest)
+    manifest = Sugary.Toml.parse_file!(path)
+    replay_mode = Map.get(opts, "replay-mode")
+
+    manifest =
+      if replay_mode in [nil, ""] do
+        manifest
+      else
+        %{manifest | replay_mode: replay_mode}
+      end
+
+    {:ok, Sugary.Runner.run_experiment_manifest!(manifest)}
+  end
+
+  defp dispatch(["experiment", "report", run_dir]) do
+    {:ok, Sugary.Runner.report!(run_dir)}
+  end
+
+  defp dispatch(["team", "search" | rest]) do
+    opts = parse_opts(rest)
+    pack = Map.fetch!(opts, "pack")
+    suite = Map.get(opts, "suite", "agent-written-fixtures")
+    split = Map.get(opts, "split")
+    max_team_size = opts |> Map.get("max-team-size", "3") |> parse_int()
+    {:ok, Sugary.TeamSearch.run!(pack, suite, max_team_size: max_team_size, split: split)}
+  end
+
+  defp dispatch(["promotion", "lock" | rest]) do
+    opts = parse_opts_multi(rest)
+    {:ok, Sugary.Promotion.lock!(opts)}
+  end
+
+  defp dispatch(["promotion", "run", lock_path | rest]) do
+    opts = parse_opts(rest)
+    split = Map.get(opts, "split", "holdout")
+    {:ok, Sugary.Promotion.run!(lock_path, split: split)}
+  end
+
+  defp dispatch(["reviewers", "check" | rest]) do
+    opts = parse_opts(rest)
+    pack = Map.fetch!(opts, "pack")
+
+    {:ok,
+     pack |> Sugary.ExternalReviewers.check_pack!() |> Sugary.ExternalReviewers.render_check()}
+  end
+
+  defp dispatch(_args) do
+    {:error,
+     "usage: sugary research init | sugary bench public list | sugary bench list [--suite <suite>] | sugary bench inspect --suite <suite> --limit <n> | sugary bench fetch <martian-offline|cr-bench> --local-only | sugary bench run --suite <suite> --method <id> | sugary bench compare --run <dir> [--run <dir>] | sugary experiment run <manifest> [--replay-mode <mode>] | sugary experiment report <run-dir> | sugary team search --pack <pack> --suite <suite> --max-team-size <n> | sugary reviewers check --pack <pack> | sugary promotion lock --candidate <path> --suite <suite> --dev-run <run-dir> --out <path> [--baseline-method <id>] [--baseline-team <path>] | sugary promotion run <lock> --split holdout"}
+  end
+
+  defp handle_result({:ok, message}) do
+    IO.puts(message)
+  end
+
+  defp handle_result({:error, message}) do
+    IO.puts(:stderr, message)
+    System.halt(1)
+  end
+
+  defp parse_opts(args), do: parse_opts(args, %{})
+
+  defp parse_opts([], acc), do: acc
+
+  defp parse_opts(["--local-only" | rest], acc),
+    do: parse_opts(rest, Map.put(acc, "local-only", true))
+
+  defp parse_opts(["--" <> key, value | rest], acc),
+    do: parse_opts(rest, Map.put(acc, key, value))
+
+  defp parse_opts([_unknown | rest], acc), do: parse_opts(rest, acc)
+
+  defp parse_opts_multi(args), do: parse_opts_multi(args, %{})
+
+  defp parse_opts_multi([], acc), do: acc
+
+  defp parse_opts_multi(["--local-only" | rest], acc),
+    do: parse_opts_multi(rest, Map.put(acc, "local-only", true))
+
+  defp parse_opts_multi(["--" <> key, value | rest], acc)
+       when key in ["baseline-method", "baseline-team", "run"] do
+    parse_opts_multi(rest, Map.update(acc, key, [value], &(&1 ++ [value])))
+  end
+
+  defp parse_opts_multi(["--" <> key, value | rest], acc),
+    do: parse_opts_multi(rest, Map.put(acc, key, value))
+
+  defp parse_opts_multi([_unknown | rest], acc), do: parse_opts_multi(rest, acc)
+
+  defp parse_int(value) when is_integer(value), do: value
+  defp parse_int(value), do: value |> to_string() |> Integer.parse() |> elem(0)
+end

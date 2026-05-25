@@ -1,0 +1,15 @@
+{
+  "id": "plausible-wrong-logic",
+  "suite": "agent-written-pr",
+  "pr": {"title": "Generated discount calculation", "body": "Agent generated a discount total."},
+  "diff": "discount_total computed from subtotal_after_tax instead of subtotal_before_tax",
+  "context": {"allowed": {"symbols": ["discount contract"]}},
+  "repo": {"path": "fixtures/review/plausible-wrong-logic"},
+  "tags": ["agent-written"],
+  "oracle": {
+    "expectedClaims": [
+      {"id": "plausible-wrong-discount-logic", "description": "Discount total is computed from the wrong amount.", "category": "bug", "severity": "high", "path": "src/discount.ex"}
+    ],
+    "knownNonIssues": []
+  }
+}

@@ -1,0 +1,27 @@
+id = "external-real-pack-hard-holdout"
+description = "Unofficial locked-style holdout smoke for opt-in external reviewer wrappers. Do not tune on this split."
+suite = "agent-written-hard-fixtures"
+split = "holdout"
+replay_mode = "cache-first"
+
+[[methods]]
+id = "promoted-local-candidate"
+team = "teams/hard-specialist-team.toml"
+
+[[methods]]
+id = "best-local-individual"
+reviewer = "symbol-graph-reflexion"
+
+[[methods]]
+id = "fixture-json-reviewer"
+type = "pack_reviewer"
+pack = "reviewer-packs/external-real-pack-v0.toml"
+reviewer = "fixture-json-reviewer"
+
+[[methods]]
+id = "external-fixture-team"
+team = "teams/external-fixture-team.toml"
+
+[[methods]]
+id = "hybrid-proof-carrying-plus-external"
+team = "teams/hybrid-proof-carrying-plus-external.toml"

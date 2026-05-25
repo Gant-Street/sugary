@@ -1,0 +1,14 @@
+id = "sample-command-reviewer"
+description = "Runs the local sample command reviewer through the safe command adapter."
+suite = "local-fixtures"
+
+[[reviewers]]
+id = "sample-command-reviewer"
+type = "command"
+command = "elixir"
+args = ["scripts/sample_command_reviewer.exs"]
+timeout_ms = 5000
+cwd = "."
+network = "inherit"
+env_allowlist = []
+estimated_cost_usd = 0.0

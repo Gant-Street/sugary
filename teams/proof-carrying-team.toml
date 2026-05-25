@@ -1,0 +1,33 @@
+id = "proof-carrying-team"
+description = "PCRS-shaped team: candidate generation, evidence, refutation/ranking, and command reviewer fixture."
+failure_policy = "continue"
+merge_strategy = "dedupe_by_key_location_and_claim"
+max_published_claims = 3
+metadata = { theory = "proof-carrying-review-search" }
+artifact_fields = ["raw_claims", "merged_claims", "provenance", "contributions"]
+
+[[reviewers]]
+id = "context-candidate-reviewer"
+type = "method"
+method = "symbol-graph-reflexion"
+
+[[reviewers]]
+id = "evidence-oriented-reviewer"
+type = "method"
+method = "evidence-gate"
+
+[[reviewers]]
+id = "refutation-ranking-reviewer"
+type = "method"
+method = "calibrated-ranker"
+
+[[reviewers]]
+id = "sample-command-reviewer"
+type = "command"
+command = "elixir"
+args = ["scripts/sample_command_reviewer.exs"]
+timeout_ms = 5000
+cwd = "."
+network = "inherit"
+env_allowlist = []
+estimated_cost_usd = 0.0

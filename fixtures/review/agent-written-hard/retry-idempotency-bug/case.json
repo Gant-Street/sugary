@@ -1,0 +1,32 @@
+{
+  "id": "retry-idempotency-bug",
+  "suite": "agent-written-hard-fixtures",
+  "split": "dev",
+  "pr": {"title": "Generated payment retry", "body": "Retries transient provider failures."},
+  "diff": "hard_retry_idempotency payment retry creates new provider charge without idempotency_key",
+  "code_before": "Provider.charge(amount, idempotency_key: payment.id)",
+  "code_after": "retry(fn -> Provider.charge(amount) end)",
+  "context": {"allowed": {"symbols": ["provider retries can double charge without idempotency_key", "payment.id is stable"]}},
+  "repo": {"path": "fixtures/review/agent-written-hard/retry-idempotency-bug"},
+  "tags": ["agent-written", "hard", "runtime"],
+  "labels": {"required_context_level": "runtime/test"},
+  "oracle": {
+    "expectedClaims": [
+      {
+        "id": "retry-idempotency-bug",
+        "description": "Payment retry can double-charge because it drops the provider idempotency key.",
+        "category": "bug",
+        "severity": "critical",
+        "path": "src/payments.ex",
+        "required_context": ["payment_provider", "retry_semantics"],
+        "difficulty": "hard",
+        "expected_evidence_tier": 2,
+        "specialist": "edge_case"
+      }
+    ],
+    "knownNonIssues": [
+      {"id": "trap-retry-backoff-style", "description": "The backoff interval style is not the behavioral issue.", "category": "style", "path": "src/payments.ex", "trapCategory": "stylistic_preference"}
+    ]
+  },
+  "traps": [{"id": "trap-retry-backoff-style", "kind": "style-only issue"}]
+}

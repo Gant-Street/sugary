@@ -1,0 +1,15 @@
+{
+  "id": "missing-test",
+  "suite": "local-fixtures",
+  "pr": {"title": "Add new behavior", "body": "Adds fallback behavior."},
+  "diff": "new_behavior_no_test adds fallback with no regression test",
+  "context": {"allowed": {"symbols": ["fallback behavior", "existing tests"]}},
+  "repo": {"path": "fixtures/review/missing-test"},
+  "tags": ["test-gap"],
+  "oracle": {
+    "expectedClaims": [
+      {"id": "new-behavior-missing-test", "description": "New behavior is not covered by a regression test.", "category": "test", "severity": "medium", "path": "test/fallback_test.exs"}
+    ],
+    "knownNonIssues": []
+  }
+}

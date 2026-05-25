@@ -1,0 +1,15 @@
+{
+  "id": "overbroad-refactor",
+  "suite": "agent-written-pr",
+  "pr": {"title": "Generated handler refactor", "body": "Agent rewrote handlers."},
+  "diff": "rewriteAllHandlers changed unrelated handlers",
+  "context": {"allowed": {"symbols": ["handler registry"]}},
+  "repo": {"path": "fixtures/review/overbroad-refactor"},
+  "tags": ["agent-written"],
+  "oracle": {
+    "expectedClaims": [
+      {"id": "overbroad-refactor-risk", "description": "Generated refactor changes unrelated handlers in the same patch.", "category": "maintainability", "severity": "medium", "path": "src/handlers.ex"}
+    ],
+    "knownNonIssues": []
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "id": "hallucinated-api",
+  "suite": "agent-written-pr",
+  "pr": {"title": "Generated client helper", "body": "Agent generated a client wrapper."},
+  "diff": "imaginaryClient fetchMagicData generated helper",
+  "context": {"allowed": {"symbols": ["realClient.fetchData"]}},
+  "repo": {"path": "fixtures/review/hallucinated-api"},
+  "tags": ["agent-written"],
+  "oracle": {
+    "expectedClaims": [
+      {"id": "hallucinated-api-call", "description": "Generated code calls an API that does not exist in the client.", "category": "bug", "severity": "high", "path": "src/client.ex"}
+    ],
+    "knownNonIssues": []
+  }
+}

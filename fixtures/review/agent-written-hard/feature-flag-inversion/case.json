@@ -1,0 +1,32 @@
+{
+  "id": "feature-flag-inversion",
+  "suite": "agent-written-hard-fixtures",
+  "split": "holdout",
+  "pr": {"title": "Gate generated onboarding flow", "body": "Enables new onboarding only for beta accounts."},
+  "diff": "hard_feature_flag_inversion generated code uses unless beta_onboarding_enabled",
+  "code_before": "if Feature.enabled?(:beta_onboarding, account), do: new_flow(), else: old_flow()",
+  "code_after": "unless Feature.enabled?(:beta_onboarding, account), do: new_flow(), else: old_flow()",
+  "context": {"allowed": {"symbols": ["beta_onboarding true means new flow", "old_flow remains default"]}},
+  "repo": {"path": "fixtures/review/agent-written-hard/feature-flag-inversion"},
+  "tags": ["agent-written", "hard", "logic"],
+  "labels": {"required_context_level": "changed-file"},
+  "oracle": {
+    "expectedClaims": [
+      {
+        "id": "feature-flag-inversion",
+        "description": "Generated feature flag condition is inverted and enables the new flow for non-beta accounts.",
+        "category": "bug",
+        "severity": "high",
+        "path": "src/onboarding.ex",
+        "required_context": ["feature_flag_contract"],
+        "difficulty": "hard",
+        "expected_evidence_tier": 4,
+        "specialist": "logic"
+      }
+    ],
+    "knownNonIssues": [
+      {"id": "trap-feature-flag-name", "description": "The feature flag name is intentionally verbose and not a review issue.", "category": "style", "path": "src/onboarding.ex", "trapCategory": "stylistic_preference"}
+    ]
+  },
+  "traps": [{"id": "trap-feature-flag-name", "kind": "style-only issue"}]
+}

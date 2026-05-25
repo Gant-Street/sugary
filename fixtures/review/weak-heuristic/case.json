@@ -1,0 +1,15 @@
+{
+  "id": "weak-heuristic",
+  "suite": "local-fixtures",
+  "pr": {"title": "Adjust formatting", "body": "Small formatting change."},
+  "diff": "TODO_STYLE possible early return style preference",
+  "context": {"allowed": {"symbols": []}},
+  "repo": {"path": "fixtures/review/weak-heuristic"},
+  "tags": ["noise-control"],
+  "oracle": {
+    "expectedClaims": [],
+    "knownNonIssues": [
+      {"id": "style-only-early-return", "description": "Style-only early return request should not be published.", "category": "style", "path": "src/style.ex"}
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+id = "review-team-v0"
+description = "Compares single reviewers against local Review Team v0 manifests."
+suite = "local-fixtures"
+
+[[methods]]
+id = "baseline-single-reviewer"
+reviewer = "baseline-changed-files"
+
+[[methods]]
+id = "default-local-team"
+team = "teams/default-local-team.toml"
+
+[[methods]]
+id = "proof-carrying-team"
+team = "teams/proof-carrying-team.toml"

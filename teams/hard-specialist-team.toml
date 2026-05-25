@@ -1,0 +1,34 @@
+id = "hard-specialist-team"
+description = "Hard-suite baseline-pack style team with static, security, and adversarial specialists."
+failure_policy = "continue"
+merge_strategy = "dedupe_by_key_location_and_claim"
+max_published_claims = 3
+metadata = { suite = "agent-written-hard-fixtures", purpose = "hard-suite-baseline-pack-winner" }
+artifact_fields = ["raw_claims", "merged_claims", "provenance", "contributions"]
+
+[[reviewers]]
+id = "static-analysis-reviewer"
+type = "command"
+command = "elixir"
+args = ["scripts/static_analysis_reviewer_fixture.exs"]
+timeout_ms = 5000
+cwd = "."
+capabilities = ["static_analysis", "api"]
+
+[[reviewers]]
+id = "security-specialist-reviewer"
+type = "command"
+command = "elixir"
+args = ["scripts/security_specialist_reviewer_fixture.exs"]
+timeout_ms = 5000
+cwd = "."
+capabilities = ["security", "auth"]
+
+[[reviewers]]
+id = "adversarial-edge-case-reviewer"
+type = "command"
+command = "elixir"
+args = ["scripts/adversarial_edge_case_reviewer_fixture.exs"]
+timeout_ms = 5000
+cwd = "."
+capabilities = ["edge_case", "adversarial_input"]

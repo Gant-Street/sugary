@@ -1,0 +1,15 @@
+{
+  "id": "missing-auth",
+  "suite": "local-fixtures",
+  "pr": {"title": "Add admin route", "body": "Adds a route for admin exports."},
+  "diff": "route_admin adds export route without requireAdmin",
+  "context": {"allowed": {"symbols": ["requireAdmin", "router"]}},
+  "repo": {"path": "fixtures/review/missing-auth"},
+  "tags": ["security"],
+  "oracle": {
+    "expectedClaims": [
+      {"id": "admin-route-missing-auth", "description": "Admin route is added without an authorization guard.", "category": "security", "severity": "high", "path": "src/router.ex"}
+    ],
+    "knownNonIssues": []
+  }
+}

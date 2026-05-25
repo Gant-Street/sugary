@@ -1,0 +1,30 @@
+id = "public-cr-bench-smoke-v0"
+description = "Unofficial local smoke run. Not an official benchmark score. CR-Bench bridge transfer check."
+suite = "cr-bench"
+replay_mode = "cache-first"
+
+[[methods]]
+id = "baseline-diff-only"
+reviewer = "baseline-diff-only"
+
+[[methods]]
+id = "best-current-local-individual"
+reviewer = "symbol-graph-reflexion"
+
+[[methods]]
+id = "locked-hard-specialist-candidate"
+team = "teams/hard-specialist-team.toml"
+
+[[methods]]
+id = "proof-carrying-team"
+team = "teams/proof-carrying-team.toml"
+
+[[methods]]
+id = "fixture-json-reviewer"
+type = "pack_reviewer"
+pack = "reviewer-packs/external-real-pack-v0.toml"
+reviewer = "fixture-json-reviewer"
+
+[[methods]]
+id = "hybrid-proof-carrying-plus-external"
+team = "teams/hybrid-proof-carrying-plus-external.toml"

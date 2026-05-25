@@ -1,0 +1,32 @@
+{
+  "id": "generated-api-hallucination",
+  "suite": "agent-written-hard-fixtures",
+  "split": "dev",
+  "pr": {"title": "Generated analytics connector", "body": "Adds a connector for the new analytics endpoint."},
+  "diff": "hard_generated_api_hallucination hardImaginarySDK.bulkTrackEvents generated helper",
+  "code_before": "AnalyticsClient.track(event)",
+  "code_after": "hardImaginarySDK.bulkTrackEvents(events)",
+  "context": {"allowed": {"symbols": ["AnalyticsClient exposes track/2 and flush/0 only"]}},
+  "repo": {"path": "fixtures/review/agent-written-hard/generated-api-hallucination"},
+  "tags": ["agent-written", "hard", "api"],
+  "labels": {"required_context_level": "changed-file"},
+  "oracle": {
+    "expectedClaims": [
+      {
+        "id": "generated-api-hallucination",
+        "description": "Generated connector calls a client API that does not exist.",
+        "category": "bug",
+        "severity": "high",
+        "path": "src/analytics.ex",
+        "required_context": ["client_api"],
+        "difficulty": "hard",
+        "expected_evidence_tier": 3,
+        "specialist": "static_analysis"
+      }
+    ],
+    "knownNonIssues": [
+      {"id": "trap-api-module-name", "description": "The module name is unusual but valid; the nonexistent function is the issue.", "category": "style", "path": "src/analytics.ex", "trapCategory": "stylistic_preference"}
+    ]
+  },
+  "traps": [{"id": "trap-api-module-name", "kind": "style-only issue"}]
+}

@@ -1,0 +1,30 @@
+id = "pcrs-hard-fixtures-v0"
+description = "Runs current reviewers against hard agent-written fixtures with saturation diagnostics."
+suite = "agent-written-hard-fixtures"
+split = "dev"
+max_cost_usd = 1.00
+max_duration_seconds = 600
+
+[[methods]]
+id = "best-current-individual"
+reviewer = "symbol-graph-reflexion"
+
+[[methods]]
+id = "diff-only-baseline"
+reviewer = "baseline-diff-only"
+
+[[methods]]
+id = "symbol-graph-reviewer"
+reviewer = "symbol-graph-reflexion"
+
+[[methods]]
+id = "evidence-refuter-reviewer"
+reviewer = "pcrs-evidence-refuter"
+
+[[methods]]
+id = "baseline-pack-team-search-winner"
+team = "teams/hard-specialist-team.toml"
+
+[[methods]]
+id = "proof-carrying-team"
+team = "teams/proof-carrying-team.toml"

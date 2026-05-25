@@ -1,0 +1,30 @@
+id = "pcrs-agent-pr-first-proof"
+description = "Non-validating theory ablation for agent-written PR fixtures."
+suite = "agent-written-pr"
+max_cost_usd = 1.00
+max_duration_seconds = 600
+
+[[methods]]
+id = "a-diff-only-single-shot"
+context = "diff_only"
+candidate_generation = "baseline_single_shot"
+evidence = "none"
+refutation = "none"
+ranking = "fixed_threshold"
+
+[[methods]]
+id = "d-symbol-graph-candidate-swarm"
+context = "symbol_graph_stub"
+candidate_generation = "reflexion_stub"
+evidence = "none"
+refutation = "none"
+ranking = "fixed_threshold"
+
+[[methods]]
+id = "g-calibrated-ranker"
+context = "symbol_graph_stub"
+candidate_generation = "reflexion_stub"
+evidence = "static_trace_stub"
+refutation = "generic_refuter_stub"
+ranking = "expected_value_stub"
+comment_style = "proof_carrying_comment"

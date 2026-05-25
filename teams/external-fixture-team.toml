@@ -1,0 +1,19 @@
+id = "external-fixture-team"
+description = "External pack smoke team using the local JSON reviewer fixture and optional Semgrep wrapper."
+failure_policy = "continue"
+merge_strategy = "dedupe_by_key_location_and_claim"
+max_published_claims = 3
+metadata = { purpose = "external-real-pack-smoke" }
+artifact_fields = ["raw_claims", "merged_claims", "provenance"]
+
+[[reviewers]]
+id = "fixture-json-reviewer"
+type = "pack_reviewer"
+pack = "reviewer-packs/external-real-pack-v0.toml"
+reviewer = "fixture-json-reviewer"
+
+[[reviewers]]
+id = "semgrep-json"
+type = "pack_reviewer"
+pack = "reviewer-packs/external-real-pack-v0.toml"
+reviewer = "semgrep-json"

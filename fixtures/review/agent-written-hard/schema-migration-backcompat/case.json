@@ -1,0 +1,32 @@
+{
+  "id": "schema-migration-backcompat",
+  "suite": "agent-written-hard-fixtures",
+  "split": "train",
+  "pr": {"title": "Generated profile schema v3", "body": "Adds optional profile metadata."},
+  "diff": "hard_schema_backcompat migration removes legacy profile_name before compatibility layer reads it",
+  "code_before": "field :profile_name, :string; field :display_name, :string",
+  "code_after": "remove :profile_name; compatibility_layer maps profile_name on read",
+  "context": {"allowed": {"symbols": ["mobile clients still send profile_name", "compatibility layer runs after DB load"]}},
+  "repo": {"path": "fixtures/review/agent-written-hard/schema-migration-backcompat"},
+  "tags": ["agent-written", "hard", "contract"],
+  "labels": {"required_context_level": "contract"},
+  "oracle": {
+    "expectedClaims": [
+      {
+        "id": "schema-migration-backcompat",
+        "description": "Generated migration removes a legacy field before the compatibility layer can preserve older clients.",
+        "category": "bug",
+        "severity": "high",
+        "path": "priv/repo/migrations/profile_v3.exs",
+        "required_context": ["schema_migration", "client_contract"],
+        "difficulty": "hard",
+        "expected_evidence_tier": 4,
+        "specialist": "contract"
+      }
+    ],
+    "knownNonIssues": [
+      {"id": "trap-schema-generated-file", "description": "Generated schema snapshot should be ignored; migration behavior is the issue.", "category": "bug", "path": "priv/schema_snapshot.ex", "trapCategory": "generated_file_ignore"}
+    ]
+  },
+  "traps": [{"id": "trap-schema-generated-file", "kind": "generated file should be ignored"}]
+}

@@ -1,0 +1,32 @@
+{
+  "id": "timezone-boundary-bug",
+  "suite": "agent-written-hard-fixtures",
+  "split": "dev",
+  "pr": {"title": "Generated daily billing cutoff", "body": "Uses account-local day boundaries for billing."},
+  "diff": "hard_timezone_boundary converts account local midnight to UTC after truncating date",
+  "code_before": "account.timezone |> local_midnight(date) |> DateTime.shift_zone!(\"UTC\")",
+  "code_after": "date |> DateTime.new!(~T[00:00:00], \"UTC\") |> shift_to_account_zone(account)",
+  "context": {"allowed": {"symbols": ["billing cutoff is account-local", "UTC truncation changes date for negative offsets"]}},
+  "repo": {"path": "fixtures/review/agent-written-hard/timezone-boundary-bug"},
+  "tags": ["agent-written", "hard", "edge-case"],
+  "labels": {"required_context_level": "runtime/test"},
+  "oracle": {
+    "expectedClaims": [
+      {
+        "id": "timezone-boundary-bug",
+        "description": "Generated billing cutoff truncates in UTC before applying the account timezone.",
+        "category": "bug",
+        "severity": "medium",
+        "path": "src/billing.ex",
+        "required_context": ["timezone_contract", "boundary_test"],
+        "difficulty": "hard",
+        "expected_evidence_tier": 2,
+        "specialist": "edge_case"
+      }
+    ],
+    "knownNonIssues": [
+      {"id": "trap-timezone-library-choice", "description": "Using DateTime is acceptable; the boundary order is wrong.", "category": "style", "path": "src/billing.ex", "trapCategory": "stylistic_preference"}
+    ]
+  },
+  "traps": [{"id": "trap-timezone-library-choice", "kind": "style-only issue"}]
+}

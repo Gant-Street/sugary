@@ -1,0 +1,15 @@
+{
+  "id": "duplicate-claims",
+  "suite": "local-fixtures",
+  "pr": {"title": "Change condition", "body": "Updates branching logic."},
+  "diff": "duplicate_condition repeats previous conditional branch",
+  "context": {"allowed": {"symbols": ["branch condition"]}},
+  "repo": {"path": "fixtures/review/duplicate-claims"},
+  "tags": ["dedupe"],
+  "oracle": {
+    "expectedClaims": [
+      {"id": "duplicate-condition-branch", "description": "Condition duplicates the previous branch.", "category": "bug", "severity": "medium", "path": "src/branch.ex"}
+    ],
+    "knownNonIssues": []
+  }
+}

@@ -1,0 +1,33 @@
+id = "external-real-pack-local-smoke"
+description = "Unofficial local smoke comparison for opt-in external reviewer wrappers."
+suite = "agent-written-hard-fixtures"
+split = "dev"
+replay_mode = "cache-first"
+
+[[methods]]
+id = "promoted-local-candidate"
+team = "teams/hard-specialist-team.toml"
+
+[[methods]]
+id = "best-local-individual"
+reviewer = "symbol-graph-reflexion"
+
+[[methods]]
+id = "fixture-json-reviewer"
+type = "pack_reviewer"
+pack = "reviewer-packs/external-real-pack-v0.toml"
+reviewer = "fixture-json-reviewer"
+
+[[methods]]
+id = "semgrep-json"
+type = "pack_reviewer"
+pack = "reviewer-packs/external-real-pack-v0.toml"
+reviewer = "semgrep-json"
+
+[[methods]]
+id = "external-fixture-team"
+team = "teams/external-fixture-team.toml"
+
+[[methods]]
+id = "hybrid-proof-carrying-plus-external"
+team = "teams/hybrid-proof-carrying-plus-external.toml"

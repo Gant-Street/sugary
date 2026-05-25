@@ -1,0 +1,15 @@
+{
+  "id": "null-guard",
+  "suite": "local-fixtures",
+  "pr": {"title": "Add retry path", "body": "Retries transient lookup errors."},
+  "diff": "loadUser_retry calls buildSession after retry",
+  "context": {"allowed": {"symbols": ["loadUser returns User | nil", "buildSession expects User"]}},
+  "repo": {"path": "fixtures/review/null-guard"},
+  "tags": ["needs_context"],
+  "oracle": {
+    "expectedClaims": [
+      {"id": "null-user-retry-build-session", "description": "Retry path can pass a null user into buildSession.", "category": "bug", "severity": "high", "path": "src/session.ex", "tags": ["needs_context"]}
+    ],
+    "knownNonIssues": []
+  }
+}

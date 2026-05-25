@@ -1,0 +1,32 @@
+{
+  "id": "tenant-isolation-leak",
+  "suite": "agent-written-hard-fixtures",
+  "split": "train",
+  "pr": {"title": "Add generated export endpoint", "body": "Exports invoices for the current account."},
+  "diff": "hard_tenant_leak generated export uses account_id param without tenant_scope middleware",
+  "code_before": "scope_through(:tenant); get('/invoices/export', ExportController, :index)",
+  "code_after": "get('/admin/invoices/export/:account_id', ExportController, :index)",
+  "context": {"allowed": {"symbols": ["tenant_scope middleware enforces tenant_id", "account_id route param is user-controlled"]}},
+  "repo": {"path": "fixtures/review/agent-written-hard/tenant-isolation-leak"},
+  "tags": ["agent-written", "hard", "security"],
+  "labels": {"required_context_level": "cross-file"},
+  "oracle": {
+    "expectedClaims": [
+      {
+        "id": "tenant-isolation-leak",
+        "description": "Generated export route can read another tenant's invoices because it trusts account_id without tenant scoping.",
+        "category": "security",
+        "severity": "critical",
+        "path": "src/routes.ex",
+        "required_context": ["route", "middleware", "tenant_model"],
+        "difficulty": "hard",
+        "expected_evidence_tier": 3,
+        "specialist": "security"
+      }
+    ],
+    "knownNonIssues": [
+      {"id": "trap-tenant-auth-controller", "description": "The controller checks authentication; the missing check is tenant authorization.", "category": "security", "path": "src/export_controller.ex", "trapCategory": "auth_check_elsewhere"}
+    ]
+  },
+  "traps": [{"id": "trap-tenant-auth-controller", "kind": "auth check exists but insufficient"}]
+}

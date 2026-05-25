@@ -1,0 +1,15 @@
+{
+  "id": "weak-auth-generated-route",
+  "suite": "agent-written-pr",
+  "pr": {"title": "Generated project route", "body": "Agent added route with login check."},
+  "diff": "generatedRoute checks logged_in but misses tenant role authorization",
+  "context": {"allowed": {"symbols": ["requireTenantRole"]}},
+  "repo": {"path": "fixtures/review/weak-auth-generated-route"},
+  "tags": ["agent-written", "security"],
+  "oracle": {
+    "expectedClaims": [
+      {"id": "weak-auth-generated-route", "description": "Generated route checks login but not tenant or role authorization.", "category": "security", "severity": "high", "path": "src/routes.ex"}
+    ],
+    "knownNonIssues": []
+  }
+}

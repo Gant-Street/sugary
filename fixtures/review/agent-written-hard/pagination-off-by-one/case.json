@@ -1,0 +1,32 @@
+{
+  "id": "pagination-off-by-one",
+  "suite": "agent-written-hard-fixtures",
+  "split": "train",
+  "pr": {"title": "Generated cursor pagination", "body": "Adds cursor pagination to activity list."},
+  "diff": "hard_pagination_off_by_one generated cursor uses <= limit and drops has_more sentinel",
+  "code_before": "items = query |> limit(page_size + 1); has_more = length(items) > page_size",
+  "code_after": "items = query |> limit(page_size); has_more = length(items) >= page_size",
+  "context": {"allowed": {"symbols": ["has_more requires sentinel row", "page_size is user visible"]}},
+  "repo": {"path": "fixtures/review/agent-written-hard/pagination-off-by-one"},
+  "tags": ["agent-written", "hard", "edge-case"],
+  "labels": {"required_context_level": "changed-file"},
+  "oracle": {
+    "expectedClaims": [
+      {
+        "id": "pagination-off-by-one",
+        "description": "Generated pagination loses the sentinel row and reports has_more incorrectly at page boundaries.",
+        "category": "bug",
+        "severity": "medium",
+        "path": "src/activity.ex",
+        "required_context": ["pagination_contract"],
+        "difficulty": "hard",
+        "expected_evidence_tier": 4,
+        "specialist": "edge_case"
+      }
+    ],
+    "knownNonIssues": [
+      {"id": "trap-pagination-missing-total", "description": "Not returning total_count is intentional cursor pagination behavior.", "category": "test", "path": "src/activity.ex", "trapCategory": "intentional_behavior"}
+    ]
+  },
+  "traps": [{"id": "trap-pagination-missing-total", "kind": "intentional behavior documented in PR body"}]
+}

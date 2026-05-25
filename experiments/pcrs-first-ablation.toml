@@ -1,0 +1,42 @@
+id = "pcrs-first-ablation"
+description = "Harness validation and first local PCRS ablation."
+suite = "local-fixtures"
+max_cost_usd = 1.00
+max_duration_seconds = 600
+
+[[methods]]
+id = "golden-perfect-reviewer"
+
+[[methods]]
+id = "golden-noisy-reviewer"
+
+[[methods]]
+id = "golden-missing-context-reviewer"
+
+[[methods]]
+id = "golden-duplicate-reviewer"
+
+[[methods]]
+id = "a-diff-only-single-shot"
+context = "diff_only"
+candidate_generation = "baseline_single_shot"
+evidence = "none"
+refutation = "none"
+ranking = "fixed_threshold"
+
+[[methods]]
+id = "c-symbol-graph"
+context = "symbol_graph_stub"
+candidate_generation = "baseline_single_shot"
+evidence = "none"
+refutation = "none"
+ranking = "fixed_threshold"
+
+[[methods]]
+id = "f-adversarial-refutation"
+context = "symbol_graph_stub"
+candidate_generation = "reflexion_stub"
+evidence = "static_trace_stub"
+refutation = "generic_refuter_stub"
+ranking = "fixed_threshold"
+comment_style = "proof_carrying_comment"

@@ -1,0 +1,66 @@
+id = "baseline-pack-v0"
+description = "First heterogeneous reviewer pack for complementarity testing."
+metadata = { suite = "agent-written-fixtures" }
+
+[[reviewers]]
+id = "diff-only-baseline"
+type = "method"
+method = "baseline-diff-only"
+capabilities = ["diff"]
+
+[[reviewers]]
+id = "symbol-graph-reviewer"
+type = "method"
+method = "symbol-graph-reflexion"
+capabilities = ["diff", "cross_file"]
+
+[[reviewers]]
+id = "proof-carrying-reviewer"
+type = "method"
+method = "pcrs-evidence-refuter"
+capabilities = ["diff", "cross_file", "evidence", "refutation"]
+
+[[reviewers]]
+id = "static-analysis-reviewer"
+type = "command"
+command = "elixir"
+args = ["scripts/static_analysis_reviewer_fixture.exs"]
+timeout_ms = 5000
+cwd = "."
+capabilities = ["static_analysis", "api"]
+
+[[reviewers]]
+id = "security-specialist-reviewer"
+type = "command"
+command = "elixir"
+args = ["scripts/security_specialist_reviewer_fixture.exs"]
+timeout_ms = 5000
+cwd = "."
+capabilities = ["security", "auth"]
+
+[[reviewers]]
+id = "test-gap-reviewer"
+type = "command"
+command = "elixir"
+args = ["scripts/test_gap_reviewer_fixture.exs"]
+timeout_ms = 5000
+cwd = "."
+capabilities = ["test_gap", "edge_case"]
+
+[[reviewers]]
+id = "integration-contract-reviewer"
+type = "command"
+command = "elixir"
+args = ["scripts/integration_contract_reviewer_fixture.exs"]
+timeout_ms = 5000
+cwd = "."
+capabilities = ["contract", "schema"]
+
+[[reviewers]]
+id = "adversarial-edge-case-reviewer"
+type = "command"
+command = "elixir"
+args = ["scripts/adversarial_edge_case_reviewer_fixture.exs"]
+timeout_ms = 5000
+cwd = "."
+capabilities = ["edge_case", "adversarial_input"]

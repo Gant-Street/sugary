@@ -1,0 +1,15 @@
+{
+  "id": "missing-edge-case-test",
+  "suite": "agent-written-pr",
+  "pr": {"title": "Generated parser branch", "body": "Agent generated parser fallback."},
+  "diff": "edge_case_missing empty input branch has no test",
+  "context": {"allowed": {"symbols": ["parser tests"]}},
+  "repo": {"path": "fixtures/review/missing-edge-case-test"},
+  "tags": ["agent-written", "test-gap"],
+  "oracle": {
+    "expectedClaims": [
+      {"id": "missing-edge-case-test", "description": "Generated branch lacks the edge-case test that would catch empty input.", "category": "test", "severity": "medium", "path": "test/parser_test.exs"}
+    ],
+    "knownNonIssues": []
+  }
+}

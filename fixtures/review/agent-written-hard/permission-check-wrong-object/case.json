@@ -1,0 +1,32 @@
+{
+  "id": "permission-check-wrong-object",
+  "suite": "agent-written-hard-fixtures",
+  "split": "dev",
+  "pr": {"title": "Generated document delete action", "body": "Allows users to delete stale generated documents."},
+  "diff": "hard_wrong_permission_object delete_document checks workspace.canDelete but not document.owner_id",
+  "code_before": "authorize!(user, document, :delete)",
+  "code_after": "authorize!(user, workspace, :delete_documents); Repo.delete(document)",
+  "context": {"allowed": {"symbols": ["workspace permission is broad", "document has owner_id and confidential flag"]}},
+  "repo": {"path": "fixtures/review/agent-written-hard/permission-check-wrong-object"},
+  "tags": ["agent-written", "hard", "security"],
+  "labels": {"required_context_level": "cross-file"},
+  "oracle": {
+    "expectedClaims": [
+      {
+        "id": "permission-check-wrong-object",
+        "description": "Delete action checks workspace permission instead of the document-specific permission object.",
+        "category": "security",
+        "severity": "high",
+        "path": "src/documents.ex",
+        "required_context": ["authorization_model", "document_model"],
+        "difficulty": "hard",
+        "expected_evidence_tier": 3,
+        "specialist": "security"
+      }
+    ],
+    "knownNonIssues": [
+      {"id": "trap-permission-route-name", "description": "The route name looks admin-only but routing is not the permission boundary.", "category": "security", "path": "src/router.ex", "trapCategory": "scary_safe_code"}
+    ]
+  },
+  "traps": [{"id": "trap-permission-route-name", "kind": "scary-looking code safe due to real boundary elsewhere"}]
+}

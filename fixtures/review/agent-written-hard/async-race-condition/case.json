@@ -1,0 +1,32 @@
+{
+  "id": "async-race-condition",
+  "suite": "agent-written-hard-fixtures",
+  "split": "holdout",
+  "pr": {"title": "Parallelize generated sync", "body": "Runs profile and preference writes concurrently."},
+  "diff": "hard_async_race_condition Task.async writes preferences before profile transaction commits",
+  "code_before": "Repo.transaction(fn -> profile = upsert_profile(user); upsert_preferences(profile.id) end)",
+  "code_after": "profile_task = Task.async(fn -> upsert_profile(user) end); prefs_task = Task.async(fn -> upsert_preferences(user.id) end)",
+  "context": {"allowed": {"symbols": ["preferences requires profile row", "profile upsert is transactional"]}},
+  "repo": {"path": "fixtures/review/agent-written-hard/async-race-condition"},
+  "tags": ["agent-written", "hard", "runtime"],
+  "labels": {"required_context_level": "runtime/test"},
+  "oracle": {
+    "expectedClaims": [
+      {
+        "id": "async-race-condition",
+        "description": "Generated parallel sync can write preferences before the profile transaction commits.",
+        "category": "bug",
+        "severity": "high",
+        "path": "src/sync.ex",
+        "required_context": ["transaction_ordering", "async_execution"],
+        "difficulty": "hard",
+        "expected_evidence_tier": 2,
+        "specialist": "runtime"
+      }
+    ],
+    "knownNonIssues": [
+      {"id": "trap-async-task-supervisor", "description": "Using Task.async is allowed here; the bug is the dependency ordering.", "category": "bug", "path": "src/sync.ex", "trapCategory": "scary_safe_code"}
+    ]
+  },
+  "traps": [{"id": "trap-async-task-supervisor", "kind": "scary-looking code that is safe by itself"}]
+}

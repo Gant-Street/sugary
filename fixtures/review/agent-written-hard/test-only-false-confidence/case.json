@@ -1,0 +1,32 @@
+{
+  "id": "test-only-false-confidence",
+  "suite": "agent-written-hard-fixtures",
+  "split": "holdout",
+  "pr": {"title": "Generated parser edge tests", "body": "Adds tests and generated parser change for quoted empty fields."},
+  "diff": "hard_test_only_false_confidence parser tests assert happy path but generated parser ignores quoted empty field",
+  "code_before": "parse_csv(\"a,,c\") == [\"a\", \"\", \"c\"]",
+  "code_after": "parse_csv(\"a,\\\"\\\",c\") == [\"a\", \"c\"]",
+  "context": {"allowed": {"symbols": ["quoted empty field is meaningful", "new tests only cover unquoted fields"]}},
+  "repo": {"path": "fixtures/review/agent-written-hard/test-only-false-confidence"},
+  "tags": ["agent-written", "hard", "test-gap"],
+  "labels": {"required_context_level": "runtime/test"},
+  "oracle": {
+    "expectedClaims": [
+      {
+        "id": "test-only-false-confidence",
+        "description": "Generated tests create false confidence because they miss the quoted empty-field behavior changed by the parser.",
+        "category": "test",
+        "severity": "medium",
+        "path": "test/parser_test.exs",
+        "required_context": ["parser_contract", "test_behavior_gap"],
+        "difficulty": "hard",
+        "expected_evidence_tier": 4,
+        "specialist": "test_gap"
+      }
+    ],
+    "knownNonIssues": [
+      {"id": "trap-test-count", "description": "The number of tests increased; raw test count is not the issue.", "category": "test", "path": "test/parser_test.exs", "trapCategory": "irrelevant_missing_test"}
+    ]
+  },
+  "traps": [{"id": "trap-test-count", "kind": "missing test that is irrelevant"}]
+}

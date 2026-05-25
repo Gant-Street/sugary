@@ -1,0 +1,22 @@
+id = "default-local-team"
+description = "Local deterministic research stubs for team evaluation."
+failure_policy = "continue"
+merge_strategy = "dedupe_by_key_location_and_claim"
+max_published_claims = 3
+metadata = { purpose = "local-smoke" }
+artifact_fields = ["raw_claims", "merged_claims", "provenance"]
+
+[[reviewers]]
+id = "changed-files-baseline"
+type = "method"
+method = "baseline-changed-files"
+
+[[reviewers]]
+id = "symbol-graph-reflexion"
+type = "method"
+method = "symbol-graph-reflexion"
+
+[[reviewers]]
+id = "calibrated-ranker"
+type = "method"
+method = "calibrated-ranker"

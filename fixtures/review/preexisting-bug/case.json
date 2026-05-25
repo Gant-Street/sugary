@@ -1,0 +1,15 @@
+{
+  "id": "preexisting-bug",
+  "suite": "local-fixtures",
+  "pr": {"title": "Touch cache code", "body": "Moves cache helper."},
+  "diff": "preexisting_bug touched while moving helper",
+  "context": {"allowed": {"symbols": ["cache helper existed before PR"]}},
+  "repo": {"path": "fixtures/review/preexisting-bug"},
+  "tags": ["false-positive-control"],
+  "oracle": {
+    "expectedClaims": [],
+    "knownNonIssues": [
+      {"id": "preexisting-cache-bug", "description": "Cache bug is pre-existing and not introduced by this PR.", "category": "bug", "introducedByPr": false, "path": "src/cache.ex"}
+    ]
+  }
+}

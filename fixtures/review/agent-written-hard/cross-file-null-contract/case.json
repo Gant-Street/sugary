@@ -1,0 +1,32 @@
+{
+  "id": "cross-file-null-contract",
+  "suite": "agent-written-hard-fixtures",
+  "split": "train",
+  "pr": {"title": "Use cached retry result", "body": "Generated retry path reuses cached lookup data."},
+  "diff": "hard_null_contract loadUserRetryResult now passes cached_user into buildSessionFromUser",
+  "code_before": "loadUserRetryResult(id) |> case do {:ok, user} -> buildSessionFromUser(user) end",
+  "code_after": "cached_user = cache_fetch(id); buildSessionFromUser(cached_user)",
+  "context": {"allowed": {"symbols": ["cache_fetch returns User | nil", "buildSessionFromUser requires User", "caller previously matched {:ok, user}"]}},
+  "repo": {"path": "fixtures/review/agent-written-hard/cross-file-null-contract"},
+  "tags": ["agent-written", "hard", "cross-file"],
+  "labels": {"required_context_level": "cross-file"},
+  "oracle": {
+    "expectedClaims": [
+      {
+        "id": "cross-file-null-contract",
+        "description": "Generated retry path can pass a null cached user into buildSessionFromUser.",
+        "category": "bug",
+        "severity": "high",
+        "path": "src/session.ex",
+        "required_context": ["cache_contract", "session_builder"],
+        "difficulty": "hard",
+        "expected_evidence_tier": 3,
+        "specialist": "edge_case"
+      }
+    ],
+    "knownNonIssues": [
+      {"id": "trap-cross-file-style-guard", "description": "Adding an early return is style-only; the issue is the cross-file nil contract.", "category": "style", "path": "src/session.ex", "trapCategory": "stylistic_preference"}
+    ]
+  },
+  "traps": [{"id": "trap-cross-file-style-guard", "kind": "style-only issue"}]
+}

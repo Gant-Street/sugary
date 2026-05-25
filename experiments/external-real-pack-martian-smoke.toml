@@ -1,0 +1,22 @@
+id = "external-real-pack-martian-smoke"
+description = "Unofficial local Martian smoke comparison for external reviewer wrappers. This is not an official benchmark score."
+suite = "martian-offline"
+replay_mode = "cache-first"
+
+[[methods]]
+id = "promoted-local-candidate"
+team = "teams/hard-specialist-team.toml"
+
+[[methods]]
+id = "best-local-individual"
+reviewer = "symbol-graph-reflexion"
+
+[[methods]]
+id = "fixture-json-reviewer"
+type = "pack_reviewer"
+pack = "reviewer-packs/external-real-pack-v0.toml"
+reviewer = "fixture-json-reviewer"
+
+[[methods]]
+id = "hybrid-proof-carrying-plus-external"
+team = "teams/hybrid-proof-carrying-plus-external.toml"

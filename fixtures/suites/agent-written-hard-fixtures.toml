@@ -1,0 +1,14 @@
+[suite]
+id = "agent-written-hard-fixtures"
+
+[split.train]
+cases = ["cross-file-null-contract", "tenant-isolation-leak", "pagination-off-by-one", "schema-migration-backcompat"]
+
+[split.dev]
+cases = ["permission-check-wrong-object", "retry-idempotency-bug", "generated-api-hallucination", "timezone-boundary-bug"]
+
+[split.holdout]
+cases = ["async-race-condition", "feature-flag-inversion", "test-only-false-confidence", "preexisting-bug-near-changed-code"]
+
+[split.smoke]
+cases = ["cross-file-null-contract", "tenant-isolation-leak"]
