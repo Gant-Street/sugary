@@ -118,6 +118,8 @@ defmodule Sugary.Martian do
       "source_url" => url,
       "metadata" => %{
         "martian_source_repo" => repo,
+        "review_url" => url,
+        "target_url" => diff_url,
         "diff_cached" => cached_diff(root, diff_url) != nil
       }
     }

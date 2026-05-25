@@ -141,6 +141,22 @@ defmodule Sugary.CLI do
     {:ok, Sugary.ToolGauntlet.run!(run_opts)}
   end
 
+  defp dispatch(["repo", "materialize" | rest]) do
+    opts = parse_opts(rest)
+
+    run_dir =
+      Sugary.RepoMaterializer.run!(
+        suite: Map.get(opts, "suite", "martian-offline"),
+        split: Map.get(opts, "split"),
+        limit: opts |> Map.get("limit", "30") |> parse_int(),
+        offset: opts |> Map.get("offset", "0") |> parse_int(),
+        mode: Map.get(opts, "mode", "plan"),
+        id: Map.get(opts, "id", "repo-materialization-v0")
+      )
+
+    {:ok, run_dir}
+  end
+
   defp dispatch(["team", "search" | rest]) do
     opts = parse_opts(rest)
     pack = Map.fetch!(opts, "pack")
@@ -171,7 +187,7 @@ defmodule Sugary.CLI do
 
   defp dispatch(_args) do
     {:error,
-     "usage: sugary research init | sugary bench public list | sugary bench list [--suite <suite>] | sugary bench inspect --suite <suite> --limit <n> | sugary bench fetch <martian-offline|cr-bench> --local-only | sugary bench run --suite <suite> --method <id> | sugary bench compare --run <dir> [--run <dir>] | sugary experiment run <manifest> [--replay-mode <mode>] | sugary experiment report <run-dir> | sugary campaign run <manifest> [--resume] [--dry-run] [--limit-experiments <n>] [--replay-mode <mode>] | sugary tool gauntlet --source-run <dir> --method <id> --baseline <id> [--tools a,b] | sugary team search --pack <pack> --suite <suite> --max-team-size <n> | sugary reviewers check --pack <pack> | sugary promotion lock --candidate <path> --suite <suite> --dev-run <run-dir> --out <path> [--baseline-method <id>] [--baseline-team <path>] | sugary promotion run <lock> --split holdout"}
+     "usage: sugary research init | sugary bench public list | sugary bench list [--suite <suite>] | sugary bench inspect --suite <suite> --limit <n> | sugary bench fetch <martian-offline|cr-bench> --local-only | sugary bench run --suite <suite> --method <id> | sugary bench compare --run <dir> [--run <dir>] | sugary experiment run <manifest> [--replay-mode <mode>] | sugary experiment report <run-dir> | sugary campaign run <manifest> [--resume] [--dry-run] [--limit-experiments <n>] [--replay-mode <mode>] | sugary tool gauntlet --source-run <dir> --method <id> --baseline <id> [--tools a,b] | sugary repo materialize --suite <suite> [--mode plan|metadata|fetch] [--limit <n>] | sugary team search --pack <pack> --suite <suite> --max-team-size <n> | sugary reviewers check --pack <pack> | sugary promotion lock --candidate <path> --suite <suite> --dev-run <run-dir> --out <path> [--baseline-method <id>] [--baseline-team <path>] | sugary promotion run <lock> --split holdout"}
   end
 
   defp handle_result({:ok, message}) do

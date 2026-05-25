@@ -374,3 +374,59 @@ Interpretation:
 - The result does not mean repo tools are useless. It means these v0 replay signals are too weak once the candidate pool is already mostly changed-file-grounded.
 - `repo_rg` cannot be meaningfully evaluated until Sugary can materialize or locate target repository checkouts for benchmark cases.
 - The next tooling loop should test live model access to a single read-only repo-navigation interface on cases with real target files, or first build the benchmark checkout/overlay layer needed for `rg` and `read_file` to be real tools rather than unavailable signals.
+
+## 2026-05-25: Repo Materialization v0
+
+Command sequence:
+
+```sh
+mix run -e 'IO.puts(Sugary.RepoMaterializer.run!(suite: "martian-offline", limit: 30, offset: 0, mode: "plan", id: "martian-repo-materialization-v0-plan-30"))'
+mix run -e 'IO.puts(Sugary.RepoMaterializer.run!(suite: "martian-offline", limit: 30, offset: 0, mode: "metadata", id: "martian-repo-materialization-v0-metadata-30"))'
+mix run -e 'IO.puts(Sugary.RepoMaterializer.run!(suite: "martian-offline", limit: 1, offset: 0, mode: "fetch", id: "martian-repo-materialization-v0-fetch-smoke"))'
+mix run -e 'IO.puts(Sugary.RepoMaterializer.run!(suite: "martian-offline", limit: 10, offset: 0, mode: "fetch", id: "martian-repo-materialization-v0-fetch-discourse-10"))'
+```
+
+Run artifacts:
+
+```text
+.sugary/research/repo-materializations/20260525T233008Z-martian-repo-materialization-v0-plan-30
+.sugary/research/repo-materializations/20260525T233018Z-martian-repo-materialization-v0-metadata-30
+.sugary/research/repo-materializations/20260525T233048Z-martian-repo-materialization-v0-fetch-smoke
+.sugary/research/repo-materializations/20260525T233120Z-martian-repo-materialization-v0-fetch-discourse-10
+```
+
+Scope:
+
+- Benchmark: Martian Code Review Bench offline, local smoke only.
+- Reviewer behavior: unchanged.
+- Model calls: none.
+- Network: GitHub API for metadata, git fetch for fetch-mode cases.
+- Official score: no.
+
+Result:
+
+| Run | Cases | Planned | Metadata resolved | Workspace ready | Exact diff parity | Failed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Plan, first 30 | 30 | 30 | 0 | 0 | 0 | 0 |
+| Metadata, first 30 | 30 | 0 | 30 | 0 | 0 | 0 |
+| Fetch smoke, first case | 1 | 0 | 0 | 1 | 1 | 0 |
+| Fetch Discourse slice | 10 | 0 | 0 | 10 | 10 | 0 |
+
+Interpretation:
+
+- Martian can back real-repo experiments. The first 30 cases all point to supported GitHub PR or commit URLs.
+- GitHub metadata resolved exact base/head SHAs for 30/30 cases.
+- Fetch mode successfully materialized the first 10 Discourse cases into base/head workspaces with exact changed-file parity.
+- The Discourse fetch slice produced 10 tool-ready cases for read-only repo navigation experiments.
+- This is not reviewer validation. It only establishes the missing substrate needed to test whether `rg`, `read_file`, and later execution tools actually improve review.
+
+Next research move:
+
+Run a live single-variable tool ablation on the 10 materialized Discourse cases:
+
+```text
+A: same Codex model, diff-only prompt
+B: same Codex model, same prompt budget, plus read-only repo navigator transcript
+```
+
+Promotion should require higher F1 or usefulness-adjusted F1, no usefulness/SNR regression, no added noise, paired wins over losses, and latency within a fixed budget.

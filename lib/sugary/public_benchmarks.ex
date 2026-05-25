@@ -112,11 +112,13 @@ defmodule Sugary.PublicBenchmarks do
       source_metadata: %{
         benchmark: suite,
         source_url: source_url(suite),
+        case_source_url: text_field(decoded, ["source_url"]),
         source_path: source_root,
         source_commit_sha: source_commit,
         original_case_id: original_id,
         repo: repo,
         pr: pr,
+        benchmark_metadata: map_field(decoded, "metadata") || %{},
         license_note: license_note(suite),
         normalization_timestamp: now,
         adapter_version: @adapter_version,
