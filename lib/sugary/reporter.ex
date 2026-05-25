@@ -1,12 +1,22 @@
 defmodule Sugary.Reporter do
   def write_report!(run_dir, manifest, method_reports, cases \\ []) do
-    report = render_report(manifest, method_reports, cases)
+    research_scorecard = Sugary.ResearchScorecard.build(manifest, method_reports, cases)
+    report = render_report(manifest, method_reports, cases, research_scorecard)
     File.write!(Path.join(run_dir, "report.md"), report)
-    write_diagnostics!(run_dir, manifest, method_reports, cases)
+    write_diagnostics!(run_dir, manifest, method_reports, cases, research_scorecard)
     report
   end
 
   def render_report(manifest, method_reports, cases \\ []) do
+    render_report(
+      manifest,
+      method_reports,
+      cases,
+      Sugary.ResearchScorecard.build(manifest, method_reports, cases)
+    )
+  end
+
+  def render_report(manifest, method_reports, cases, research_scorecard) do
     best =
       Enum.max_by(method_reports, &{&1.score.f1, &1.score.usefulness, &1.score.snr}, fn -> nil end)
 
@@ -30,6 +40,7 @@ defmodule Sugary.Reporter do
 
     team_details = render_team_details(method_reports)
     external_details = render_external_details(method_reports)
+    research_details = render_research_scorecard(research_scorecard)
     diagnostics = render_diagnostics(manifest, method_reports, cases)
 
     """
@@ -67,6 +78,8 @@ defmodule Sugary.Reporter do
 
     #{external_details}
 
+    #{research_details}
+
     #{diagnostics}
 
     ## Next Experiments
@@ -76,9 +89,20 @@ defmodule Sugary.Reporter do
     """
   end
 
-  defp write_diagnostics!(_run_dir, _manifest, _method_reports, []), do: :ok
+  defp write_diagnostics!(run_dir, _manifest, _method_reports, [], research_scorecard) do
+    Sugary.ResearchScorecard.write!(run_dir, research_scorecard)
+  end
 
-  defp write_diagnostics!(run_dir, manifest, method_reports, cases) do
+  defp write_diagnostics!(run_dir, manifest, method_reports, cases, research_scorecard) do
+    Sugary.ResearchScorecard.write!(run_dir, research_scorecard)
+
+    Sugary.EvidenceRefutationAblation.maybe_write!(
+      run_dir,
+      manifest,
+      method_reports,
+      research_scorecard
+    )
+
     Sugary.Json.write!(
       Path.join(run_dir, "saturation-diagnostics.json"),
       Sugary.Diagnostics.saturation(method_reports, cases, manifest.split)
@@ -132,6 +156,21 @@ defmodule Sugary.Reporter do
     ## Anti-Overfitting Warnings
 
     #{if warning_rows == "", do: "- none", else: warning_rows}
+    """
+  end
+
+  defp render_research_scorecard(scorecard) do
+    """
+    ## Research Scorecard
+
+    Full artifacts:
+
+    - `research-scorecard.json`
+    - `research-scorecard.md`
+
+    - Best method by research utility: `#{scorecard.summary.best_method_by_research_utility || "none"}`
+    - Recommended next ablation: `#{scorecard.next_ablation.primary_ablation}`
+    - Metric posture: reporting-only; publishing behavior is unchanged.
     """
   end
 

@@ -22,6 +22,10 @@ See [docs/external-real-reviewers.md](docs/external-real-reviewers.md) and [docs
 
 See [docs/public-benchmark-bridge.md](docs/public-benchmark-bridge.md), [docs/martian-offline-smoke.md](docs/martian-offline-smoke.md), and [docs/cr-bench-smoke.md](docs/cr-bench-smoke.md) for local-only public benchmark smoke adapters and unofficial transfer reports.
 
+See [docs/research-scorecard.md](docs/research-scorecard.md) for the reporting-only research utility scorecard and next-ablation recommendation layer.
+
+See [docs/evidence-refutation-ablation.md](docs/evidence-refutation-ablation.md) for the first narrow PCRS mechanism test.
+
 ## Autoresearch Lab
 
 Sugary currently starts as an Elixir-first local research harness for proof-carrying code review experiments.
@@ -48,8 +52,11 @@ mix escript.build
 ./sugary bench public list
 ./sugary experiment run experiments/public-martian-smoke-v0.toml --replay-mode cache-first
 ./sugary experiment run experiments/public-cr-bench-smoke-v0.toml --replay-mode cache-first
+./sugary experiment run experiments/evidence-refutation-ablation-v0.toml
 ./sugary bench compare --run .sugary/research/runs/<local-run> --run .sugary/research/public-smoke/<public-run>
 ```
+
+Every experiment writes `research-scorecard.json` and `research-scorecard.md` under its run directory. Use those artifacts to choose the next small ablation before adding new model providers or product surfaces.
 
 Public benchmark smoke runs are local-only and unofficial. Set `MARTIAN_BENCH_DIR` or `CR_BENCH_DIR`, or place datasets at `.sugary/research/benchmarks/martian-offline` and `.sugary/research/benchmarks/cr-bench`, then run:
 

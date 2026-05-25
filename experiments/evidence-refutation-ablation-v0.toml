@@ -1,0 +1,51 @@
+id = "evidence-refutation-ablation-v0"
+description = "Narrow PCRS mechanism test: same context and candidate generation path with evidence/refutation/ranking toggled."
+suite = "agent-written-hard-fixtures"
+split = "dev"
+max_cost_usd = 1.00
+max_duration_seconds = 600
+
+[[methods]]
+id = "ablation-a-no-evidence-no-refutation"
+class = "research"
+context = "symbol_graph_stub"
+candidate_generation = "reflexion_stub"
+evidence = "none"
+refutation = "none"
+ranking = "fixed_threshold"
+
+[[methods]]
+id = "ablation-b-evidence-only"
+class = "research"
+context = "symbol_graph_stub"
+candidate_generation = "reflexion_stub"
+evidence = "static_trace_stub"
+refutation = "none"
+ranking = "fixed_threshold"
+
+[[methods]]
+id = "ablation-c-refutation-only"
+class = "research"
+context = "symbol_graph_stub"
+candidate_generation = "reflexion_stub"
+evidence = "none"
+refutation = "generic_refuter_stub"
+ranking = "fixed_threshold"
+
+[[methods]]
+id = "ablation-d-evidence-refutation"
+class = "research"
+context = "symbol_graph_stub"
+candidate_generation = "reflexion_stub"
+evidence = "static_trace_stub"
+refutation = "generic_refuter_stub"
+ranking = "fixed_threshold"
+
+[[methods]]
+id = "ablation-e-evidence-refutation-ranker"
+class = "research"
+context = "symbol_graph_stub"
+candidate_generation = "reflexion_stub"
+evidence = "static_trace_stub"
+refutation = "generic_refuter_stub"
+ranking = "expected_value_stub"
