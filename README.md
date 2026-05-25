@@ -28,6 +28,8 @@ See [docs/evidence-refutation-ablation.md](docs/evidence-refutation-ablation.md)
 
 See [docs/autoresearch-campaigns.md](docs/autoresearch-campaigns.md) for bounded, resumable long-running research campaigns.
 
+See [docs/tool-gauntlet.md](docs/tool-gauntlet.md) for sequential, one-variable-at-a-time tool capability ablations.
+
 See [docs/research-log.md](docs/research-log.md) for local research checkpoints and transfer-smoke results.
 
 ## Autoresearch Lab
@@ -61,6 +63,7 @@ elixir scripts/benchmarks/fetch_martian_diffs.exs --limit 3
 ./sugary experiment run experiments/evidence-refutation-ablation-v0.toml
 ./sugary campaign run campaigns/evidence-refutation-campaign-v0.toml --limit-experiments 4
 ./sugary experiment run experiments/codex-live-smoke-v0.toml --replay-mode cache-first
+./sugary tool gauntlet --source-run .sugary/research/runs/<run-id> --method public-pcrs-static-codex-low-team --baseline codex-gpt-5.5-xhigh --suite martian-offline --limit 25 --offset 25 --tools read_changed_files,base_preexisting_check,repo_rg
 ./sugary bench compare --run .sugary/research/runs/<local-run> --run .sugary/research/public-smoke/<public-run>
 ```
 

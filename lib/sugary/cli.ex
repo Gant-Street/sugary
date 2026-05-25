@@ -109,6 +109,38 @@ defmodule Sugary.CLI do
     {:ok, Sugary.Campaign.run!(path, run_opts)}
   end
 
+  defp dispatch(["tool", "gauntlet" | rest]) do
+    opts = parse_opts(rest)
+
+    capabilities =
+      opts
+      |> Map.get("tools")
+      |> parse_csv()
+
+    run_opts =
+      [
+        source_run: Map.fetch!(opts, "source-run"),
+        method_id: Map.fetch!(opts, "method"),
+        baseline_id: Map.fetch!(opts, "baseline"),
+        suite: Map.get(opts, "suite", "martian-offline"),
+        split: Map.get(opts, "split"),
+        limit: opts |> Map.get("limit", "25") |> parse_int(),
+        offset: opts |> Map.get("offset", "0") |> parse_int(),
+        id: Map.get(opts, "id", "tool-gauntlet-v0"),
+        max_published: opts |> Map.get("max-published", "2") |> parse_int(),
+        min_score: opts |> Map.get("min-score", "2.0") |> parse_float()
+      ]
+
+    run_opts =
+      if capabilities == [] do
+        run_opts
+      else
+        Keyword.put(run_opts, :capabilities, capabilities)
+      end
+
+    {:ok, Sugary.ToolGauntlet.run!(run_opts)}
+  end
+
   defp dispatch(["team", "search" | rest]) do
     opts = parse_opts(rest)
     pack = Map.fetch!(opts, "pack")
@@ -139,7 +171,7 @@ defmodule Sugary.CLI do
 
   defp dispatch(_args) do
     {:error,
-     "usage: sugary research init | sugary bench public list | sugary bench list [--suite <suite>] | sugary bench inspect --suite <suite> --limit <n> | sugary bench fetch <martian-offline|cr-bench> --local-only | sugary bench run --suite <suite> --method <id> | sugary bench compare --run <dir> [--run <dir>] | sugary experiment run <manifest> [--replay-mode <mode>] | sugary experiment report <run-dir> | sugary campaign run <manifest> [--resume] [--dry-run] [--limit-experiments <n>] [--replay-mode <mode>] | sugary team search --pack <pack> --suite <suite> --max-team-size <n> | sugary reviewers check --pack <pack> | sugary promotion lock --candidate <path> --suite <suite> --dev-run <run-dir> --out <path> [--baseline-method <id>] [--baseline-team <path>] | sugary promotion run <lock> --split holdout"}
+     "usage: sugary research init | sugary bench public list | sugary bench list [--suite <suite>] | sugary bench inspect --suite <suite> --limit <n> | sugary bench fetch <martian-offline|cr-bench> --local-only | sugary bench run --suite <suite> --method <id> | sugary bench compare --run <dir> [--run <dir>] | sugary experiment run <manifest> [--replay-mode <mode>] | sugary experiment report <run-dir> | sugary campaign run <manifest> [--resume] [--dry-run] [--limit-experiments <n>] [--replay-mode <mode>] | sugary tool gauntlet --source-run <dir> --method <id> --baseline <id> [--tools a,b] | sugary team search --pack <pack> --suite <suite> --max-team-size <n> | sugary reviewers check --pack <pack> | sugary promotion lock --candidate <path> --suite <suite> --dev-run <run-dir> --out <path> [--baseline-method <id>] [--baseline-team <path>] | sugary promotion run <lock> --split holdout"}
   end
 
   defp handle_result({:ok, message}) do
@@ -188,6 +220,26 @@ defmodule Sugary.CLI do
 
   defp parse_int(value) when is_integer(value), do: value
   defp parse_int(value), do: value |> to_string() |> Integer.parse() |> elem(0)
+
+  defp parse_float(value) when is_float(value), do: value
+  defp parse_float(value) when is_integer(value), do: value * 1.0
+
+  defp parse_float(value) do
+    case Float.parse(to_string(value)) do
+      {number, ""} -> number
+      _ -> raise ArgumentError, "invalid float #{inspect(value)}"
+    end
+  end
+
+  defp parse_csv(nil), do: []
+
+  defp parse_csv(value) do
+    value
+    |> to_string()
+    |> String.split(",", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+  end
 
   defp parse_optional_int(nil), do: nil
   defp parse_optional_int(value), do: parse_int(value)

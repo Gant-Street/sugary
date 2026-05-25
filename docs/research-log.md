@@ -326,3 +326,51 @@ Interpretation:
 Next research move:
 
 Move from heuristic counterarguments to proof-specific refutation. For each candidate, the refuter should try to produce a concrete disproof: preexisting behavior, caller invariant, test coverage, API contract, changed-file mismatch, or benchmark/source-context contradiction. Missing independent support should be one weak signal, not the main objection.
+
+## 2026-05-25: Read-Only Tool Gauntlet v0
+
+Command sequence:
+
+```sh
+mix run -e 'IO.puts(Sugary.ToolGauntlet.run!(source_run: ".sugary/research/runs/20260525T215029Z-public-martian-ranking-fresh-v1", method_id: "public-pcrs-static-codex-low-team", baseline_id: "codex-gpt-5.5-xhigh", suite: "martian-offline", limit: 25, offset: 25, id: "readonly-tool-gauntlet-v0-regression", capabilities: ["read_changed_files", "base_preexisting_check", "repo_rg"], max_published: 2, min_score: 2.0))'
+```
+
+Run artifact:
+
+```text
+.sugary/research/tool-gauntlets/20260525T231803Z-readonly-tool-gauntlet-v0-regression
+```
+
+Scope:
+
+- Benchmark: Martian Code Review Bench offline, local smoke only.
+- Cases: 26-50, already inspected in earlier loops. This is a contaminated regression slice, not fresh holdout evidence.
+- Candidate pool: replayed `public-pcrs-static-codex-low-team` claims.
+- Baseline: replayed `codex-gpt-5.5-xhigh` claims.
+- Model calls: none.
+- Official score: no.
+
+Result:
+
+| Variant | F1 | Usefulness | SNR | Hits | Noise | Avg comments/PR |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Raw baseline: `codex-gpt-5.5-xhigh` | 0.293 | 0.632 | 1.714 | 12 | 7 | 0.760 |
+| Source method: `public-pcrs-static-codex-low-team` | 0.322 | 0.583 | 1.400 | 14 | 10 | 0.960 |
+| Control no-tool ranker | 0.322 | 0.583 | 1.400 | 14 | 10 | 0.960 |
+| `read_changed_files` | 0.322 | 0.583 | 1.400 | 14 | 10 | 0.960 |
+| `base_preexisting_check` | 0.322 | 0.583 | 1.400 | 14 | 10 | 0.960 |
+| `repo_rg` | 0.322 | 0.583 | 1.400 | 14 | 10 | 0.960 |
+
+Decision:
+
+- `read_changed_files`: discard for this replay slice.
+- `base_preexisting_check`: discard for this replay slice.
+- `repo_rg`: discard for this replay slice because no local target repository checkout was available.
+- Kept capabilities: none.
+
+Interpretation:
+
+- This is a useful negative result. Naive post-hoc changed-file and preexisting signals did not separate the remaining true positives from noise in the replayed public candidate pool.
+- The result does not mean repo tools are useless. It means these v0 replay signals are too weak once the candidate pool is already mostly changed-file-grounded.
+- `repo_rg` cannot be meaningfully evaluated until Sugary can materialize or locate target repository checkouts for benchmark cases.
+- The next tooling loop should test live model access to a single read-only repo-navigation interface on cases with real target files, or first build the benchmark checkout/overlay layer needed for `rg` and `read_file` to be real tools rather than unavailable signals.
