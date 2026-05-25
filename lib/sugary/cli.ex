@@ -60,8 +60,9 @@ defmodule Sugary.CLI do
     suite = Map.fetch!(opts, "suite")
     method = Map.fetch!(opts, "method")
     limit = opts |> Map.get("limit", "3") |> parse_int()
+    offset = opts |> Map.get("offset", "0") |> parse_int()
     split = Map.get(opts, "split")
-    run_dir = Sugary.Runner.run_bench!(suite, method, limit: limit, split: split)
+    run_dir = Sugary.Runner.run_bench!(suite, method, limit: limit, offset: offset, split: split)
     {:ok, run_dir}
   end
 

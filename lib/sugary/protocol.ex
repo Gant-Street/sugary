@@ -108,6 +108,7 @@ defmodule Sugary.Protocol do
                   :description,
                   :split,
                   :limit,
+                  :offset,
                   :replay_mode,
                   :max_cost_usd,
                   :max_duration_seconds,

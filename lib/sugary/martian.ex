@@ -35,20 +35,27 @@ defmodule Sugary.Martian do
 
   @impl Sugary.BenchmarkAdapter
   def list_cases(opts) when is_list(opts) do
-    opts |> Keyword.get(:limit) |> default_limit() |> list_cases()
+    limit = opts |> Keyword.get(:limit) |> default_limit()
+    offset = opts |> Keyword.get(:offset, 0) |> default_offset()
+    list_cases(limit, offset)
   end
 
-  def list_cases(limit) when is_integer(limit) do
+  def list_cases(limit) when is_integer(limit), do: list_cases(limit, 0)
+
+  def list_cases(limit, offset) when is_integer(limit) and is_integer(offset) do
     with {:ok, path} <- fetch_local_only() do
-      {:ok, load_martian_cases(path, limit)}
+      {:ok, load_martian_cases(path, limit, offset)}
     end
   end
 
   defp default_limit(nil), do: 3
   defp default_limit(""), do: 3
   defp default_limit(limit), do: limit
+  defp default_offset(nil), do: 0
+  defp default_offset(""), do: 0
+  defp default_offset(offset), do: offset
 
-  defp load_martian_cases(path, limit) do
+  defp load_martian_cases(path, limit, offset) do
     benchmark_data = Path.join([path, "offline", "results", "benchmark_data.json"])
     sugary_cases = Path.join([path, "offline", "sugary_cases", "*.json"]) |> Path.wildcard()
 
@@ -57,8 +64,9 @@ defmodule Sugary.Martian do
         benchmark_data
         |> Sugary.Json.read!()
         |> Enum.sort_by(fn {url, _case} -> url end)
+        |> Enum.drop(offset)
         |> Enum.take(limit)
-        |> Enum.with_index(1)
+        |> Enum.with_index(offset + 1)
         |> Enum.map(fn {{url, raw_case}, index} ->
           raw_case
           |> normalize_martian_record(url, path)
@@ -75,12 +83,18 @@ defmodule Sugary.Martian do
         end)
 
       sugary_cases != [] ->
-        Sugary.PublicBenchmarks.normalize_files(sugary_cases, "martian-offline", path, limit)
+        Sugary.PublicBenchmarks.normalize_files(
+          sugary_cases,
+          "martian-offline",
+          path,
+          limit,
+          offset
+        )
 
       true ->
         path
         |> public_case_files()
-        |> Sugary.PublicBenchmarks.normalize_files("martian-offline", path, limit)
+        |> Sugary.PublicBenchmarks.normalize_files("martian-offline", path, limit, offset)
     end
   end
 

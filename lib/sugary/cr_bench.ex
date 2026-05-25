@@ -35,15 +35,19 @@ defmodule Sugary.CRBench do
 
   @impl Sugary.BenchmarkAdapter
   def list_cases(opts) when is_list(opts) do
-    opts |> Keyword.get(:limit) |> default_limit() |> list_cases()
+    limit = opts |> Keyword.get(:limit) |> default_limit()
+    offset = opts |> Keyword.get(:offset, 0) |> default_offset()
+    list_cases(limit, offset)
   end
 
-  def list_cases(limit) when is_integer(limit) do
+  def list_cases(limit) when is_integer(limit), do: list_cases(limit, 0)
+
+  def list_cases(limit, offset) when is_integer(limit) and is_integer(offset) do
     with {:ok, path} <- fetch_local_only() do
       cases =
         path
         |> public_case_files()
-        |> Sugary.PublicBenchmarks.normalize_files("cr-bench", path, limit)
+        |> Sugary.PublicBenchmarks.normalize_files("cr-bench", path, limit, offset)
 
       {:ok, cases}
     end
@@ -52,6 +56,9 @@ defmodule Sugary.CRBench do
   defp default_limit(nil), do: 3
   defp default_limit(""), do: 3
   defp default_limit(limit), do: limit
+  defp default_offset(nil), do: 0
+  defp default_offset(""), do: 0
+  defp default_offset(offset), do: offset
 
   defp public_case_files(path) do
     path

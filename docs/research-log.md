@@ -151,3 +151,60 @@ Interpretation:
 Next research move:
 
 Freeze the winning public-smoke candidate shape and run a ranking-threshold ablation on the same 25-case replay cache: compare max 1, max 2, and max 3 comments per PR, plus an agreement/evidence-aware ranker. The target is to keep most of the 25 hits while cutting speculative false positives.
+
+## 2026-05-25: Ranking Policy Ablation v1
+
+Command sequence:
+
+```sh
+mix run -e 'IO.puts(Sugary.RankingPolicyAblation.run!(source_run: ".sugary/research/runs/20260525T183827Z-public-martian-pcrs-transfer-v1", method_id: "public-pcrs-static-codex-low-team", baselines: ["codex-gpt-5.5-xhigh"], suite: "martian-offline", limit: 25, offset: 0, id: "ranking-policy-ablation-v1-dev"))'
+elixir scripts/benchmarks/fetch_martian_diffs.exs --limit 25 --offset 25
+mix run -e 'IO.puts(Sugary.Runner.run_experiment_file!("experiments/public-martian-ranking-fresh-v1.toml"))'
+mix run -e 'IO.puts(Sugary.RankingPolicyAblation.run!(source_run: ".sugary/research/runs/20260525T215029Z-public-martian-ranking-fresh-v1", method_id: "public-pcrs-static-codex-low-team", baselines: ["codex-gpt-5.5-xhigh"], suite: "martian-offline", limit: 25, offset: 25, id: "ranking-policy-ablation-v1-fresh"))'
+```
+
+Run artifacts:
+
+```text
+.sugary/research/runs/20260525T214920Z-ranking-policy-ablation-v1-dev
+.sugary/research/runs/20260525T215029Z-public-martian-ranking-fresh-v1
+.sugary/research/runs/20260525T222815Z-ranking-policy-ablation-v1-fresh
+```
+
+Scope:
+
+- Benchmark: Martian Code Review Bench offline, local smoke only.
+- Dev slice: cases 1-25 from the existing public-transfer run.
+- Fresh slice: cases 26-50, selected before seeing results.
+- Official score: no.
+- Leaderboard claim: no.
+- Live model calls: yes for the fresh slice; ranking ablations replay fixed captured claims.
+
+Dev-slice result:
+
+| Policy | Recall | F1 | Usefulness | SNR | Avg comments/PR | Noise | Hits | Utility | Decision |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `codex-gpt-5.5-xhigh` | 0.284 | 0.368 | 0.525 | 1.105 | 1.600 | 19 | 21 | -2.000 | raw baseline |
+| `team-ev-max-1` | 0.216 | 0.337 | 0.762 | 3.200 | 0.840 | 5 | 16 | 8.900 | rejected by F1 guardrail |
+| `team-ev-max-2` | 0.311 | 0.434 | 0.719 | 2.556 | 1.280 | 9 | 23 | 10.800 | promoted for fresh check |
+| `team-ev-max-3` | 0.338 | 0.446 | 0.658 | 1.923 | 1.520 | 13 | 25 | 8.200 | lower utility |
+
+Fresh-slice result:
+
+| Policy | Recall | F1 | Usefulness | SNR | Avg comments/PR | Noise | Hits | Utility | Decision |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `codex-gpt-5.5-xhigh` | 0.190 | 0.293 | 0.632 | 1.714 | 0.760 | 7 | 12 | 3.100 | raw baseline |
+| `team-ev-max-1` | 0.206 | 0.313 | 0.650 | 1.857 | 0.800 | 7 | 13 | 4.000 | failed promotion guardrails |
+| `team-ev-max-2` | 0.222 | 0.322 | 0.583 | 1.400 | 0.960 | 10 | 14 | 1.600 | rejected |
+| `team-ev-max-3` | 0.222 | 0.322 | 0.583 | 1.400 | 0.960 | 10 | 14 | 1.600 | rejected |
+
+Interpretation:
+
+- The dev slice supported a max-2 policy because the third ranked comment was net negative while the second ranked comment still carried positive utility.
+- The fresh slice did not validate that promotion. `team-ev-max-2` recovered two more hits than raw xhigh but added three more noise comments and regressed usefulness/SNR.
+- `team-ev-max-1` was the closest fresh-slice result: one extra hit, no added noise, slightly better F1/usefulness/SNR, but one extra comment and not enough margin for promotion under the current guardrails.
+- This is a useful negative result. The public-transfer candidate's raw claim pool improved recall, but the ranking policy is not robust enough across adjacent Martian slices.
+
+Next research move:
+
+Do not tune another threshold directly on the fresh slice. Build a real evidence/refutation scorer that predicts which second-ranked comments are worth publishing. The next target should beat raw `codex-gpt-5.5-xhigh` on a locked fresh slice with no added noise and no comment-count regression, while preserving at least one unique true positive.

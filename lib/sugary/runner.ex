@@ -41,13 +41,25 @@ defmodule Sugary.Runner do
   end
 
   def run_experiment_manifest!(%Protocol.ExperimentManifest{} = manifest) do
-    cases = load_suite!(manifest.suite, split: manifest.split, limit: manifest.limit)
+    cases =
+      load_suite!(manifest.suite,
+        split: manifest.split,
+        limit: manifest.limit,
+        offset: manifest.offset
+      )
+
     {run_dir, _method_reports, _cases} = run_experiment_with_reports!(manifest, nil, cases)
     run_dir
   end
 
   def run_experiment_manifest_with_reports!(%Protocol.ExperimentManifest{} = manifest) do
-    cases = load_suite!(manifest.suite, split: manifest.split, limit: manifest.limit)
+    cases =
+      load_suite!(manifest.suite,
+        split: manifest.split,
+        limit: manifest.limit,
+        offset: manifest.offset
+      )
+
     run_experiment_with_reports!(manifest, nil, cases)
   end
 
@@ -244,9 +256,11 @@ defmodule Sugary.Runner do
 
   defp load_suite!(suite, opts) do
     limit = Keyword.get(opts, :limit)
+    offset = Keyword.get(opts, :offset) || 0
 
     suite
     |> Sugary.Fixtures.load_suite!(opts)
+    |> Enum.drop(offset)
     |> maybe_limit(limit)
   end
 
@@ -294,6 +308,7 @@ defmodule Sugary.Runner do
     suite = "#{manifest.suite}"
     split = "#{manifest.split || ""}"
     limit = "#{manifest.limit || ""}"
+    offset = "#{manifest.offset || ""}"
     replay_mode = "#{manifest.replay_mode || ""}"
 
     #{methods}

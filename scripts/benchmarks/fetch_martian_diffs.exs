@@ -8,6 +8,7 @@ get_opt = fn name, default ->
 end
 
 limit = get_opt.("--limit", "5") |> String.to_integer()
+offset = get_opt.("--offset", "0") |> String.to_integer()
 root = get_opt.("--root", ".sugary/research/benchmarks/martian-offline")
 benchmark_data = Path.join([root, "offline", "results", "benchmark_data.json"])
 out_dir = Path.join([root, "offline", "results", "sugary_pr_diffs"])
@@ -29,6 +30,7 @@ entries =
   |> File.read!()
   |> :json.decode()
   |> Enum.sort_by(fn {url, _case} -> url end)
+  |> Enum.drop(offset)
   |> Enum.take(limit)
 
 results =
@@ -51,7 +53,14 @@ results =
 
         case System.cmd(
                "curl",
-               ["-fsSL", "--max-time", "45", "-H", "User-Agent: sugary-benchmark-smoke", diff_url],
+               [
+                 "-fsSL",
+                 "--max-time",
+                 "45",
+                 "-H",
+                 "User-Agent: sugary-benchmark-smoke",
+                 diff_url
+               ],
                stderr_to_stdout: true
              ) do
           {body, 0} ->
@@ -76,6 +85,7 @@ File.write!(
     generated_at: DateTime.utc_now() |> Calendar.strftime("%Y-%m-%dT%H:%M:%SZ"),
     source: benchmark_data,
     limit: limit,
+    offset: offset,
     results: results
   })
 )

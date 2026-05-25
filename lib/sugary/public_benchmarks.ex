@@ -126,10 +126,15 @@ defmodule Sugary.PublicBenchmarks do
   end
 
   def normalize_files(files, suite, source_root, limit) do
+    normalize_files(files, suite, source_root, limit, 0)
+  end
+
+  def normalize_files(files, suite, source_root, limit, offset) do
     files
     |> Enum.flat_map(&file_records/1)
-    |> Enum.with_index(1)
+    |> Enum.drop(offset)
     |> Enum.take(limit)
+    |> Enum.with_index(offset + 1)
     |> Enum.map(fn {{path, raw}, index} ->
       normalize_case(suite, path, raw, source_root, index)
     end)
