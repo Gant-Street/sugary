@@ -82,6 +82,15 @@ defmodule Sugary.Toml do
         reviewers = Map.get(doc, "reviewers", []) ++ [%{}]
         {%{doc | "reviewers" => reviewers}, :reviewer}
 
+      String.starts_with?(line, "[[") and String.ends_with?(line, "]]") ->
+        key =
+          line
+          |> String.trim_leading("[[")
+          |> String.trim_trailing("]]")
+
+        values = Map.get(doc, key, []) ++ [%{}]
+        {Map.put(doc, key, values), {:array, key}}
+
       line == "[promotion]" ->
         {Map.put_new(doc, "promotion", %{}), :promotion}
 
@@ -133,6 +142,12 @@ defmodule Sugary.Toml do
     reviewers = Map.get(doc, "reviewers", [])
     {last, rest} = List.pop_at(reviewers, -1)
     {%{doc | "reviewers" => rest ++ [Map.put(last || %{}, key, value)]}, :reviewer}
+  end
+
+  defp put_value(doc, {:array, array_key}, key, value) do
+    values = Map.get(doc, array_key, [])
+    {last, rest} = List.pop_at(values, -1)
+    {Map.put(doc, array_key, rest ++ [Map.put(last || %{}, key, value)]), {:array, array_key}}
   end
 
   defp put_value(doc, :promotion, key, value) do

@@ -30,6 +30,8 @@ See [docs/autoresearch-campaigns.md](docs/autoresearch-campaigns.md) for bounded
 
 See [docs/tool-gauntlet.md](docs/tool-gauntlet.md) for sequential, one-variable-at-a-time tool capability ablations.
 
+See [docs/architecture-gauntlet.md](docs/architecture-gauntlet.md) for comparing native harnesses, fixed-phase reviewers, repo-navigation proxies, PCRS wrappers, and team compositions as ingredients.
+
 See [docs/repo-materialization.md](docs/repo-materialization.md) for materializing benchmark PRs into exact base/head repo workspaces.
 
 See [docs/research-log.md](docs/research-log.md) for local research checkpoints and transfer-smoke results.
@@ -66,6 +68,7 @@ elixir scripts/benchmarks/fetch_martian_diffs.exs --limit 3
 ./sugary campaign run campaigns/evidence-refutation-campaign-v0.toml --limit-experiments 4
 ./sugary experiment run experiments/codex-live-smoke-v0.toml --replay-mode cache-first
 ./sugary tool gauntlet --source-run .sugary/research/runs/<run-id> --method public-pcrs-static-codex-low-team --baseline codex-gpt-5.5-xhigh --suite martian-offline --limit 25 --offset 25 --tools read_changed_files,base_preexisting_check,repo_rg
+./sugary architecture gauntlet gauntlets/five-variable-architecture-v0.toml --replay-mode cache-first
 ./sugary repo materialize --suite martian-offline --limit 30 --offset 0 --mode metadata
 ./sugary repo materialize --suite martian-offline --limit 10 --offset 0 --mode fetch
 ./sugary bench compare --run .sugary/research/runs/<local-run> --run .sugary/research/public-smoke/<public-run>

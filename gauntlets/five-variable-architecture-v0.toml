@@ -1,0 +1,71 @@
+id = "five-variable-architecture-v0"
+description = "Architecture gauntlet for the current five candidate directions: native harness, fixed-phase pipeline, repo-navigation reviewer, PCRS wrapper, and team/union composition."
+suite = "agent-written-hard-fixtures"
+split = "dev"
+limit = 12
+replay_mode = "cache-first"
+primary_metric = "usefulness_adjusted_f1"
+
+[guardrails]
+min_snr_ratio = 0.9
+min_usefulness_ratio = 1.0
+max_added_noise = 0
+max_avg_comments_per_pr = 3.0
+min_unique_hits = 1
+
+[[variables]]
+id = "native-codex-low"
+role = "native_harness_reference"
+description = "Native Codex CLI reviewer run through the command boundary and replay cache. If Codex is unavailable, this produces an explicit skip result."
+ingredients = ["native_harness", "llm", "codex_cli"]
+type = "command"
+enabled = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_exec_reviewer.exs"]
+timeout_ms = 180000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "cheap_reasoning"]
+env = ["SUGARY_REVIEWER_ID=native-codex-low", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000"]
+
+[[variables]]
+id = "agentless-style-pipeline"
+role = "candidate"
+description = "Fixed-phase localize/review/evidence/refute/rank baseline using the current PCRS evidence-refuter method."
+ingredients = ["fixed_phase", "evidence", "refutation", "ranking"]
+reviewer = "pcrs-evidence-refuter"
+
+[[variables]]
+id = "repo-navigation-reviewer"
+role = "candidate"
+description = "Current repo-navigation proxy: symbol-graph/reflexion reviewer. Future live gauntlets should replace this with materialized repo tools."
+ingredients = ["repo_navigation", "symbol_graph", "candidate_generation"]
+reviewer = "symbol-graph-reflexion"
+
+[[variables]]
+id = "pcrs-single-reviewer"
+role = "candidate"
+description = "Single-reviewer PCRS mechanism: evidence construction plus adversarial refutation before ranking."
+ingredients = ["pcrs", "proof_gate", "refutation"]
+reviewer = "pcrs-evidence-refuter"
+
+[[compositions]]
+id = "hard-specialist-team"
+role = "composition"
+description = "Specialist team/union candidate using static, security, and adversarial reviewers."
+ingredients = ["team", "specialists", "union", "dedupe"]
+team = "teams/hard-specialist-team.toml"
+members = ["agentless-style-pipeline", "repo-navigation-reviewer"]
+
+[[compositions]]
+id = "hard-specialist-plus-pcrs"
+role = "composition"
+description = "PCRS wrapper/team hybrid: hard specialists plus the PCRS evidence-refuter baseline."
+ingredients = ["team", "pcrs_wrapper", "dedupe", "ranking"]
+team = "teams/hard-specialist-plus-pcrs.toml"
+members = ["hard-specialist-team", "pcrs-single-reviewer"]
