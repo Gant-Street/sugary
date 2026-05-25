@@ -139,4 +139,67 @@ defmodule Sugary.ArchitectureGauntletTest do
     assert report =~ "Variable Scorecards"
     assert report =~ "Composition Scorecards"
   end
+
+  test "composition promotion is blocked when it only ties the native/reference baseline" do
+    dir = tmp_dir()
+
+    team_path =
+      write!(
+        dir,
+        "tie-team.toml",
+        """
+        id = "tie-team"
+        failure_policy = "continue"
+        merge_strategy = "dedupe_by_key_location_and_claim"
+        max_published_claims = 3
+
+        [[reviewers]]
+        id = "golden-perfect"
+        type = "method"
+        method = "golden-perfect-reviewer"
+        """
+      )
+
+    gauntlet_path =
+      write!(
+        dir,
+        "architecture.toml",
+        """
+        id = "architecture-tie-test"
+        suite = "local-fixtures"
+
+        [[variables]]
+        id = "native-perfect"
+        role = "native_harness_reference"
+        reviewer = "golden-perfect-reviewer"
+        ingredients = ["native_harness"]
+
+        [[variables]]
+        id = "weak-baseline"
+        role = "candidate"
+        reviewer = "golden-missing-context-reviewer"
+        ingredients = ["weak"]
+
+        [[compositions]]
+        id = "tie-team"
+        role = "composition"
+        team = "#{team_path}"
+        members = ["weak-baseline"]
+        ingredients = ["team"]
+        """
+      )
+
+    out_dir = Sugary.ArchitectureGauntlet.run!(gauntlet_path)
+    underlying_run = out_dir |> Path.join("underlying-run.txt") |> File.read!() |> String.trim()
+    on_exit(fn -> File.rm_rf(out_dir) end)
+    on_exit(fn -> File.rm_rf(underlying_run) end)
+
+    decision = Sugary.Json.read!(Path.join(out_dir, "decision.json"))
+
+    [composition] = decision["composition_decisions"]
+    assert get_in(composition, ["best_comparator", "id"]) == "native-perfect"
+    assert composition["beats_best_member"] == true
+    assert composition["beats_best_comparator"] == false
+    assert composition["decision"] == "quarantine"
+  end
 end

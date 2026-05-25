@@ -7,7 +7,7 @@ The point is to answer:
 ```text
 Does this ingredient help by itself?
 Does it add unique signal when composed with other ingredients?
-Does the composition beat its best member after dedupe/ranking?
+Does the composition beat its best member and the best usable reference baseline after dedupe/ranking?
 ```
 
 This is different from `tool gauntlet`. Tool Gauntlet v0 replays a fixed claim pool and asks whether one tool-derived signal should influence publishing. Architecture Gauntlet v0 runs full methods, command reviewers, and teams through the normal experiment runner, then compares solo and composed performance.
@@ -122,13 +122,14 @@ Composition decisions:
 
 ```text
 promote:
-  The composition beats its best member and clears guardrails.
+  The composition beats its best member, beats the best usable reference
+  baseline, and clears guardrails.
 
 quarantine:
   The composition found signal or improved a metric, but failed guardrails.
 
 reject:
-  The composition did not beat its best member.
+  The composition did not beat its best member or the best usable reference.
 ```
 
 ## Non-Claims

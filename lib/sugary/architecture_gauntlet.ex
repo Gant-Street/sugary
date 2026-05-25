@@ -74,7 +74,7 @@ defmodule Sugary.ArchitectureGauntlet do
 
     composition_decisions =
       composition_cards
-      |> Enum.map(&decide_composition(&1, all_cards, manifest.guardrails))
+      |> Enum.map(&decide_composition(&1, all_cards, references, manifest.guardrails))
 
     best_variable = best_by_rank(variable_cards)
     best_composition = best_by_rank(composition_cards)
@@ -126,7 +126,9 @@ defmodule Sugary.ArchitectureGauntlet do
         card = row.card
         score = card.score
 
-        "| `#{card.id}` | #{Enum.join(card.members, ", ")} | #{fmt(score.f1)} | #{fmt(score.usefulness)} | #{fmt(score.snr)} | #{score.hits} | #{score.noise} | #{row.unique_hits_over_best_member} | #{if row.beats_best_member, do: "yes", else: "no"} | #{row.decision} |"
+        comparator = get_in(row, [:best_comparator, :id]) || "none"
+
+        "| `#{card.id}` | #{Enum.join(card.members, ", ")} | `#{comparator}` | #{fmt(score.f1)} | #{fmt(score.usefulness)} | #{fmt(score.snr)} | #{score.hits} | #{score.noise} | #{row.unique_hits_over_comparator} | #{if row.beats_best_comparator, do: "yes", else: "no"} | #{row.decision} |"
       end)
       |> Enum.join("\n")
 
@@ -151,9 +153,9 @@ defmodule Sugary.ArchitectureGauntlet do
 
     ## Composition Scorecards
 
-    | Composition | Members | F1 | Usefulness | SNR | Hits | Noise | Unique Hits vs Best Member | Beats Best Member? | Decision |
-    | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
-    #{if composition_rows == "", do: "| none | n/a | 0 | 0 | 0 | 0 | 0 | 0 | no | reject |", else: composition_rows}
+    | Composition | Members | Best Comparator | F1 | Usefulness | SNR | Hits | Noise | Unique Hits vs Comparator | Beats Comparator? | Decision |
+    | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+    #{if composition_rows == "", do: "| none | n/a | none | 0 | 0 | 0 | 0 | 0 | 0 | no | reject |", else: composition_rows}
 
     ## Best Results
 
@@ -163,7 +165,7 @@ defmodule Sugary.ArchitectureGauntlet do
 
     ## Interpretation
 
-    This gauntlet deliberately treats the five candidate directions as ingredients, not mutually exclusive products. A solo variable can be kept for independent lift. A composition can be promoted only if it beats its best member after merge/ranking while preserving SNR, usefulness, and comment budget.
+    This gauntlet deliberately treats the five candidate directions as ingredients, not mutually exclusive products. A solo variable can be kept for independent lift. A composition can be promoted only if it beats its best declared member and the best usable reference baseline after merge/ranking while preserving SNR, usefulness, and comment budget.
 
     ## Non-Claims
 
@@ -292,7 +294,7 @@ defmodule Sugary.ArchitectureGauntlet do
     end
   end
 
-  defp decide_composition(card, comparison_cards, guardrails) do
+  defp decide_composition(card, comparison_cards, references, guardrails) do
     member_cards =
       case card.members do
         [] ->
@@ -302,38 +304,48 @@ defmodule Sugary.ArchitectureGauntlet do
           comparison_cards |> Enum.reject(&(&1.id == card.id)) |> Enum.filter(&(&1.id in members))
       end
 
-    best_member = best_by_rank(member_cards)
+    comparator_cards =
+      (member_cards ++ Enum.reject(references, &(&1.id == card.id)))
+      |> Enum.uniq_by(& &1.id)
 
-    if best_member == nil do
+    best_member = best_by_rank(member_cards)
+    best_comparator = best_by_rank(comparator_cards)
+
+    if best_comparator == nil do
       %{
         card: summarize_card(card),
         best_member: nil,
+        best_comparator: nil,
         decision: "reject",
-        reason: "No member baseline was available.",
-        unique_hits_over_best_member: 0,
+        reason: "No member or reference baseline was available.",
+        unique_hits_over_comparator: 0,
         beats_best_member: false,
+        beats_best_comparator: false,
         checks: %{}
       }
     else
-      unique = unique_hits(card, best_member)
-      checks = guardrail_checks(card, best_member, unique, guardrails)
-      beats = improves?(card.score, best_member.score)
+      unique = unique_hits(card, best_comparator)
+      checks = guardrail_checks(card, best_comparator, unique, guardrails)
+      beats_member = best_member != nil and improves?(card.score, best_member.score)
+      beats_comparator = improves?(card.score, best_comparator.score)
 
       decision =
         cond do
-          beats and Enum.all?(Map.values(checks)) -> "promote"
-          unique > 0 or beats -> "quarantine"
+          beats_member and beats_comparator and Enum.all?(Map.values(checks)) -> "promote"
+          unique > 0 or beats_member or beats_comparator -> "quarantine"
           true -> "reject"
         end
 
       %{
         card: summarize_card(card),
         best_member: summarize_card(best_member),
+        best_comparator: summarize_card(best_comparator),
         decision: decision,
         reason: decision_reason(decision, "composition"),
-        unique_hits_over_best_member: unique,
-        beats_best_member: beats,
-        score_delta: score_delta(card.score, best_member.score),
+        unique_hits_over_comparator: unique,
+        beats_best_member: beats_member,
+        beats_best_comparator: beats_comparator,
+        score_delta: score_delta(card.score, best_comparator.score),
         checks: checks
       }
     end
@@ -392,7 +404,7 @@ defmodule Sugary.ArchitectureGauntlet do
       promoted != [] ->
         best = promoted |> Enum.max_by(&score_rank(&1.card.score))
 
-        "Promote `#{best.card.id}` as the next locked candidate for this local gauntlet. It beat its best member while clearing guardrails."
+        "Promote `#{best.card.id}` as the next locked candidate for this local gauntlet. It beat its best member and best usable reference while clearing guardrails."
 
       kept != [] ->
         ids = kept |> Enum.map(&"`#{&1.card.id}`") |> Enum.join(", ")
@@ -411,7 +423,7 @@ defmodule Sugary.ArchitectureGauntlet do
       "Variable improved the reference while clearing usefulness, SNR, noise, comment, and unique-hit guardrails."
 
   defp decision_reason("promote", "composition"),
-    do: "Composition beat its best member and cleared guardrails."
+    do: "Composition beat its best member and best usable reference while clearing guardrails."
 
   defp decision_reason("quarantine", _kind),
     do: "Found signal or metric lift, but failed one or more guardrails."
