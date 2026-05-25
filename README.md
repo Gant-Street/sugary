@@ -28,6 +28,8 @@ See [docs/evidence-refutation-ablation.md](docs/evidence-refutation-ablation.md)
 
 See [docs/autoresearch-campaigns.md](docs/autoresearch-campaigns.md) for bounded, resumable long-running research campaigns.
 
+See [docs/research-log.md](docs/research-log.md) for local research checkpoints and transfer-smoke results.
+
 ## Autoresearch Lab
 
 Sugary currently starts as an Elixir-first local research harness for proof-carrying code review experiments.
@@ -52,7 +54,9 @@ mix escript.build
 ./sugary experiment run experiments/external-real-pack-local-smoke.toml --replay-mode cache-first
 ./sugary experiment run experiments/external-real-pack-hard-holdout.toml --replay-mode cache-first
 ./sugary bench public list
+elixir scripts/benchmarks/fetch_martian_diffs.exs --limit 3
 ./sugary experiment run experiments/public-martian-smoke-v0.toml --replay-mode cache-first
+./sugary experiment run experiments/public-martian-codex-transfer-v0.toml --replay-mode cache-first
 ./sugary experiment run experiments/public-cr-bench-smoke-v0.toml --replay-mode cache-first
 ./sugary experiment run experiments/evidence-refutation-ablation-v0.toml
 ./sugary campaign run campaigns/evidence-refutation-campaign-v0.toml --limit-experiments 4

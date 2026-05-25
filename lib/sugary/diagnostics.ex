@@ -132,12 +132,14 @@ defmodule Sugary.Diagnostics do
         report.results
         |> List.wrap()
         |> Enum.reduce(acc, fn result, result_acc ->
-          expected = expected_ids(result.case)
-
           result.final_claims
           |> Enum.filter(&(&1.publish_decision == "publish"))
-          |> Enum.filter(&MapSet.member?(expected, &1.dedupe_key))
-          |> Enum.map(&"#{result.case.id}::#{&1.dedupe_key}")
+          |> Enum.flat_map(fn claim ->
+            case Sugary.ClaimMatcher.expected_claim(result.case, claim) do
+              nil -> []
+              expected -> ["#{result.case.id}::#{expected.id}"]
+            end
+          end)
           |> MapSet.new()
           |> MapSet.union(result_acc)
         end)
@@ -170,7 +172,11 @@ defmodule Sugary.Diagnostics do
       result ->
         Enum.any?(
           result.final_claims,
-          &(&1.publish_decision == "publish" and &1.dedupe_key == dedupe_key)
+          &(&1.publish_decision == "publish" and
+              case Sugary.ClaimMatcher.expected_claim(result.case, &1) do
+                nil -> false
+                expected -> expected.id == dedupe_key
+              end)
         )
     end
   end
@@ -246,13 +252,6 @@ defmodule Sugary.Diagnostics do
     cases
     |> Enum.map(&(Map.get(&1.oracle, :expectedClaims, []) |> length()))
     |> Enum.sum()
-  end
-
-  defp expected_ids(bench_case) do
-    bench_case.oracle
-    |> Map.get(:expectedClaims, [])
-    |> Enum.map(& &1.id)
-    |> MapSet.new()
   end
 
   defp score_rank(score), do: {score.f1, score.usefulness, score.snr}

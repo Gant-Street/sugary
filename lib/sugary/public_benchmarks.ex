@@ -265,7 +265,14 @@ defmodule Sugary.PublicBenchmarks do
 
   defp expected_claims(decoded) do
     decoded
-    |> first_list(["expectedClaims", "expected_claims", "gold_comments", "comments", "labels"])
+    |> first_list([
+      "expectedClaims",
+      "expected_claims",
+      "golden_comments",
+      "gold_comments",
+      "comments",
+      "labels"
+    ])
     |> Enum.with_index(1)
     |> Enum.map(fn {claim, index} ->
       claim = if is_map(claim), do: claim, else: %{"description" => to_string(claim)}

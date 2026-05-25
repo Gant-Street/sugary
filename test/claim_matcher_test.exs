@@ -88,6 +88,50 @@ defmodule Sugary.ClaimMatcherTest do
     refute Sugary.ClaimMatcher.expected_claim(bench_case(), weak_claim)
   end
 
+  test "matches public benchmark claims with unknown oracle paths conservatively" do
+    public_case =
+      Protocol.BenchmarkCase.new(%{
+        id: "martian-smoke",
+        suite: "martian-offline",
+        pr: %{title: "Async cleanup", body: ""},
+        diff: "forEach(async callback) is not awaited",
+        context: %{},
+        public_benchmark: true,
+        oracle: %{
+          expectedClaims: [
+            %{
+              id: "martian-golden-1",
+              description:
+                "The code uses forEach with async callbacks, so asynchronous cleanup runs without being awaited and failures bypass the surrounding try-catch.",
+              category: "public_benchmark",
+              severity: "critical",
+              path: "unknown"
+            }
+          ],
+          knownNonIssues: []
+        }
+      })
+
+    public_claim =
+      claim(%{
+        path: "packages/app-store/vital/lib/reschedule.ts",
+        category: "runtime",
+        claim:
+          "Using forEach with async callbacks means calendar cleanup is not awaited and errors will not be caught.",
+        evidence: [
+          %{
+            type: "llm",
+            tier: 4,
+            strength: "medium",
+            summary: "The async callback is fire-and-forget and bypasses try-catch."
+          }
+        ]
+      })
+
+    assert %{id: "martian-golden-1"} =
+             Sugary.ClaimMatcher.expected_claim(public_case, public_claim)
+  end
+
   test "scorer credits fuzzy matched LLM claims" do
     result = %{
       case: bench_case(),

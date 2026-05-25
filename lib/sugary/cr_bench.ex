@@ -9,8 +9,12 @@ defmodule Sugary.CRBench do
 
   def locate do
     env = System.get_env("CR_BENCH_DIR")
-    candidates = Enum.reject([env | @candidates], &is_nil/1)
-    Enum.find(candidates, &File.dir?/1)
+
+    if env not in [nil, ""] do
+      if File.dir?(env), do: env
+    else
+      Enum.find(@candidates, &File.dir?/1)
+    end
   end
 
   def fetch_local_only do
@@ -31,7 +35,7 @@ defmodule Sugary.CRBench do
 
   @impl Sugary.BenchmarkAdapter
   def list_cases(opts) when is_list(opts) do
-    opts |> Keyword.get(:limit, 3) |> list_cases()
+    opts |> Keyword.get(:limit) |> default_limit() |> list_cases()
   end
 
   def list_cases(limit) when is_integer(limit) do
@@ -44,6 +48,10 @@ defmodule Sugary.CRBench do
       {:ok, cases}
     end
   end
+
+  defp default_limit(nil), do: 3
+  defp default_limit(""), do: 3
+  defp default_limit(limit), do: limit
 
   defp public_case_files(path) do
     path

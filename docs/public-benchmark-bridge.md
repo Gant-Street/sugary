@@ -16,10 +16,12 @@ Unofficial local smoke run. Not an official benchmark score.
 ./sugary bench public list
 ./sugary bench fetch martian-offline --local-only
 ./sugary bench fetch cr-bench --local-only
+elixir scripts/benchmarks/fetch_martian_diffs.exs --limit 3
 ./sugary bench list --suite martian-offline --limit 3
 ./sugary bench inspect --suite cr-bench --limit 3
 ./sugary bench run --suite martian-offline --method baseline-diff-only --limit 3 --local-only
 ./sugary experiment run experiments/public-martian-smoke-v0.toml --replay-mode cache-first
+./sugary experiment run experiments/public-martian-codex-transfer-v0.toml --replay-mode cache-first
 ./sugary experiment run experiments/public-cr-bench-smoke-v0.toml --replay-mode cache-first
 ./sugary bench compare --run .sugary/research/runs/<local-run> --run .sugary/research/public-smoke/<public-run>
 ```
@@ -51,6 +53,20 @@ Public cases are converted to `BenchmarkCase` records with:
 - adapter version
 
 Oracle fields and gold comments are scorer-only. Reviewer input bundles are blinded so they do not include expected comments, gold labels, original public case IDs, or benchmark answer metadata.
+
+For Martian Offline, Sugary prefers `offline/results/benchmark_data.json` from the benchmark repository and maps each PR to its golden comments. The benchmark repository does not store PR diffs directly in that file, so live reviewer smoke runs should first populate a local ignored diff cache:
+
+```sh
+elixir scripts/benchmarks/fetch_martian_diffs.exs --limit 3
+```
+
+The cache is written under:
+
+```text
+.sugary/research/benchmarks/martian-offline/offline/results/sugary_pr_diffs/
+```
+
+This keeps network fetching out of normal scoring and makes replayed smoke runs reproducible. If a diff is missing, the adapter still creates a case, but that case is not useful for judging reviewer quality.
 
 ## Artifacts
 
@@ -105,3 +121,14 @@ It does not answer:
 - whether public benchmark holdouts have been preserved
 
 Failures from public smoke should feed the next local fixture and reviewer-design loop.
+
+## First Transfer Smoke
+
+`experiments/public-martian-codex-transfer-v0.toml` is the first small public-transfer experiment. It deliberately limits Martian Offline to three cases and compares:
+
+- `baseline-diff-only`
+- `hard-specialist-plus-pcrs`
+- `codex-gpt-5.5-low`
+- `codex-gpt-5.5-xhigh`
+
+The intended readout is not benchmark rank. The intended readout is whether local hard-fixture winners transfer to real PRs, whether stronger reasoning actually improves signal, and which missing-context or noise clusters should drive the next PCRS iteration.

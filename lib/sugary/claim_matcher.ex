@@ -51,7 +51,9 @@ defmodule Sugary.ClaimMatcher do
       ((same_path?(claim, oracle) and token_overlap_score(claim, oracle) >= 0.34 and
           token_overlap_count(claim, oracle) >= 2) or
          (unknown_path?(claim) and token_overlap_score(claim, oracle) >= 0.55 and
-            token_overlap_count(claim, oracle) >= 4))
+            token_overlap_count(claim, oracle) >= 4) or
+         (unknown_path?(oracle) and token_overlap_score(claim, oracle) >= 0.3 and
+            token_overlap_count(claim, oracle) >= 2))
   end
 
   defp same_path?(claim, oracle) do
@@ -72,7 +74,7 @@ defmodule Sugary.ClaimMatcher do
     oracle_category = oracle |> field(:category) |> normalize()
 
     claim_category in ["", oracle_category, "bug", "runtime", "static_analysis", "external_text"] or
-      oracle_category in ["bug", ""]
+      oracle_category in ["bug", "", "public_benchmark"]
   end
 
   defp token_overlap_score(claim, oracle) do

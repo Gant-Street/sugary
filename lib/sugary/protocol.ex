@@ -107,6 +107,7 @@ defmodule Sugary.Protocol do
                   :reviewers,
                   :description,
                   :split,
+                  :limit,
                   :replay_mode,
                   :max_cost_usd,
                   :max_duration_seconds,

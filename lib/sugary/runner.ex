@@ -41,13 +41,13 @@ defmodule Sugary.Runner do
   end
 
   def run_experiment_manifest!(%Protocol.ExperimentManifest{} = manifest) do
-    cases = load_suite!(manifest.suite, split: manifest.split)
+    cases = load_suite!(manifest.suite, split: manifest.split, limit: manifest.limit)
     {run_dir, _method_reports, _cases} = run_experiment_with_reports!(manifest, nil, cases)
     run_dir
   end
 
   def run_experiment_manifest_with_reports!(%Protocol.ExperimentManifest{} = manifest) do
-    cases = load_suite!(manifest.suite, split: manifest.split)
+    cases = load_suite!(manifest.suite, split: manifest.split, limit: manifest.limit)
     run_experiment_with_reports!(manifest, nil, cases)
   end
 
@@ -242,7 +242,13 @@ defmodule Sugary.Runner do
   defp load_suite!(suite, opts) when suite in ["martian-offline", "cr-bench"],
     do: Sugary.PublicBenchmarks.load_cases!(suite, opts)
 
-  defp load_suite!(suite, opts), do: Sugary.Fixtures.load_suite!(suite, opts)
+  defp load_suite!(suite, opts) do
+    limit = Keyword.get(opts, :limit)
+
+    suite
+    |> Sugary.Fixtures.load_suite!(opts)
+    |> maybe_limit(limit)
+  end
 
   defp make_run_dir(id) do
     timestamp =
@@ -287,6 +293,7 @@ defmodule Sugary.Runner do
     description = "#{manifest.description || ""}"
     suite = "#{manifest.suite}"
     split = "#{manifest.split || ""}"
+    limit = "#{manifest.limit || ""}"
     replay_mode = "#{manifest.replay_mode || ""}"
 
     #{methods}
@@ -307,4 +314,11 @@ defmodule Sugary.Runner do
         method
     end
   end
+
+  defp maybe_limit(cases, nil), do: cases
+  defp maybe_limit(cases, ""), do: cases
+  defp maybe_limit(cases, limit) when is_integer(limit), do: Enum.take(cases, limit)
+
+  defp maybe_limit(cases, limit) when is_binary(limit),
+    do: cases |> maybe_limit(String.to_integer(limit))
 end

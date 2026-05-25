@@ -9,8 +9,12 @@ defmodule Sugary.Martian do
 
   def locate do
     env = System.get_env("MARTIAN_BENCH_DIR")
-    candidates = Enum.reject([env | @candidates], &is_nil/1)
-    Enum.find(candidates, &File.dir?/1)
+
+    if env not in [nil, ""] do
+      if File.dir?(env), do: env
+    else
+      Enum.find(@candidates, &File.dir?/1)
+    end
   end
 
   def fetch_local_only do
@@ -31,24 +35,127 @@ defmodule Sugary.Martian do
 
   @impl Sugary.BenchmarkAdapter
   def list_cases(opts) when is_list(opts) do
-    opts |> Keyword.get(:limit, 3) |> list_cases()
+    opts |> Keyword.get(:limit) |> default_limit() |> list_cases()
   end
 
   def list_cases(limit) when is_integer(limit) do
     with {:ok, path} <- fetch_local_only() do
-      cases =
-        path
-        |> public_case_files()
-        |> Sugary.PublicBenchmarks.normalize_files("martian-offline", path, limit)
-
-      {:ok, cases}
+      {:ok, load_martian_cases(path, limit)}
     end
   end
 
+  defp default_limit(nil), do: 3
+  defp default_limit(""), do: 3
+  defp default_limit(limit), do: limit
+
+  defp load_martian_cases(path, limit) do
+    benchmark_data = Path.join([path, "offline", "results", "benchmark_data.json"])
+    sugary_cases = Path.join([path, "offline", "sugary_cases", "*.json"]) |> Path.wildcard()
+
+    cond do
+      File.exists?(benchmark_data) ->
+        benchmark_data
+        |> Sugary.Json.read!()
+        |> Enum.sort_by(fn {url, _case} -> url end)
+        |> Enum.take(limit)
+        |> Enum.with_index(1)
+        |> Enum.map(fn {{url, raw_case}, index} ->
+          raw_case
+          |> normalize_martian_record(url, path)
+          |> Sugary.Json.encode!()
+          |> then(
+            &Sugary.PublicBenchmarks.normalize_case(
+              "martian-offline",
+              benchmark_data,
+              &1,
+              path,
+              index
+            )
+          )
+        end)
+
+      sugary_cases != [] ->
+        Sugary.PublicBenchmarks.normalize_files(sugary_cases, "martian-offline", path, limit)
+
+      true ->
+        path
+        |> public_case_files()
+        |> Sugary.PublicBenchmarks.normalize_files("martian-offline", path, limit)
+    end
+  end
+
+  defp normalize_martian_record(raw_case, url, root) do
+    pr_title = text_field(raw_case, "pr_title") || "Martian offline smoke case"
+    repo = text_field(raw_case, "source_repo") || "unknown"
+    diff_url = text_field(raw_case, "original_url") || url
+    diff = cached_diff(root, diff_url) || "Martian PR diff not cached locally for #{diff_url}."
+
+    %{
+      "id" => url,
+      "repo" => repo,
+      "pr" => %{
+        "title" => pr_title,
+        "body" => "Unofficial local Martian offline smoke case.",
+        "original_id" => url
+      },
+      "diff" => diff,
+      "changed_files" => changed_files_from_diff(diff),
+      "expectedClaims" => expected_claims(raw_case),
+      "source_url" => url,
+      "metadata" => %{
+        "martian_source_repo" => repo,
+        "diff_cached" => cached_diff(root, diff_url) != nil
+      }
+    }
+  end
+
+  defp expected_claims(raw_case) do
+    raw_case
+    |> Map.get("golden_comments", [])
+    |> Enum.with_index(1)
+    |> Enum.map(fn {comment, index} ->
+      body = text_field(comment, "comment") || "Expected Martian benchmark finding"
+
+      %{
+        "id" => "martian-golden-#{index}",
+        "description" => body,
+        "category" => "public_benchmark",
+        "severity" => text_field(comment, "severity") || "medium",
+        "path" => "unknown",
+        "difficulty" => "public",
+        "specialist" => "public_benchmark"
+      }
+    end)
+  end
+
+  defp cached_diff(root, url) do
+    path = Path.join([root, "offline", "results", "sugary_pr_diffs", "#{hash(url)}.diff"])
+    if File.exists?(path), do: File.read!(path)
+  end
+
+  defp changed_files_from_diff(diff) do
+    ~r/^diff --git a\/(.+?) b\/(.+)$/m
+    |> Regex.scan(diff)
+    |> Enum.map(fn [_line, _old, new] -> new end)
+    |> Enum.uniq()
+  end
+
+  defp hash(value), do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower)
+
+  defp text_field(map, key) when is_map(map) do
+    case Map.get(map, key) do
+      value when is_binary(value) and value != "" -> value
+      _other -> nil
+    end
+  end
+
+  defp text_field(_map, _key), do: nil
+
   defp public_case_files(path) do
-    path
-    |> Path.join("**/*")
-    |> Path.wildcard()
+    root_cases = path |> Path.join("*.json") |> Path.wildcard()
+    golden_cases = path |> Path.join("offline/golden_comments/*.json") |> Path.wildcard()
+
+    (root_cases ++ golden_cases)
     |> Enum.filter(&File.regular?/1)
     |> Enum.reject(&hidden_or_generated?/1)
     |> Enum.sort()
