@@ -1,0 +1,30 @@
+id = "hard-specialist-hybrid-promotion-v0"
+description = "Dev-gate comparison for the hard-specialist plus PCRS hybrid promotion candidate."
+suite = "agent-written-hard-fixtures"
+split = "dev"
+max_cost_usd = 1.00
+max_duration_seconds = 600
+
+[[methods]]
+id = "baseline-diff-only"
+reviewer = "baseline-diff-only"
+
+[[methods]]
+id = "symbol-graph-reflexion"
+reviewer = "symbol-graph-reflexion"
+
+[[methods]]
+id = "pcrs-evidence-refuter"
+reviewer = "pcrs-evidence-refuter"
+
+[[methods]]
+id = "proof-carrying-team"
+team = "teams/proof-carrying-team.toml"
+
+[[methods]]
+id = "hard-specialist-team"
+team = "teams/hard-specialist-team.toml"
+
+[[methods]]
+id = "hard-specialist-plus-pcrs"
+team = "teams/hard-specialist-plus-pcrs.toml"

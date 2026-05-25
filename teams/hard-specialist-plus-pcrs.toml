@@ -1,0 +1,17 @@
+id = "hard-specialist-plus-pcrs"
+description = "Hybrid promotion candidate combining hard-suite specialists with the current PCRS evidence/refuter baseline."
+failure_policy = "continue"
+merge_strategy = "dedupe_by_key_location_and_claim"
+max_published_claims = 3
+metadata = { suite = "agent-written-hard-fixtures", purpose = "locked-local-promotion-candidate" }
+artifact_fields = ["raw_claims", "merged_claims", "provenance", "contributions"]
+
+[[reviewers]]
+id = "hard-specialist-team"
+type = "team"
+path = "teams/hard-specialist-team.toml"
+
+[[reviewers]]
+id = "pcrs-evidence-refuter"
+type = "method"
+method = "pcrs-evidence-refuter"
