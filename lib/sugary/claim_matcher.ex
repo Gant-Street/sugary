@@ -6,12 +6,12 @@ defmodule Sugary.ClaimMatcher do
 
   def expected_claim(bench_case, claim) do
     expected_claims(bench_case)
-    |> Enum.find(&claim_matches?(claim, &1))
+    |> best_match(claim)
   end
 
   def known_non_issue(bench_case, claim) do
     known_non_issues(bench_case)
-    |> Enum.find(&claim_matches?(claim, &1))
+    |> best_match(claim)
   end
 
   def matches_expected?(bench_case, claim, expected) do
@@ -36,8 +36,28 @@ defmodule Sugary.ClaimMatcher do
     |> MapSet.new()
   end
 
-  defp claim_matches?(claim, oracle) do
-    exact_match?(claim, oracle) or fuzzy_match?(claim, oracle)
+  defp best_match(oracles, claim) do
+    oracles
+    |> Enum.map(&{&1, match_rank(claim, &1)})
+    |> Enum.reject(fn {_oracle, rank} -> is_nil(rank) end)
+    |> Enum.max_by(fn {_oracle, rank} -> rank end, fn -> nil end)
+    |> case do
+      nil -> nil
+      {oracle, _rank} -> oracle
+    end
+  end
+
+  defp match_rank(claim, oracle) do
+    cond do
+      exact_match?(claim, oracle) ->
+        {2, 1_000_000, 1.0}
+
+      fuzzy_match?(claim, oracle) ->
+        {1, token_overlap_count(claim, oracle), token_overlap_score(claim, oracle)}
+
+      true ->
+        nil
+    end
   end
 
   defp exact_match?(claim, oracle) do

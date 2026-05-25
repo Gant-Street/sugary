@@ -1,0 +1,19 @@
+id = "public-martian-pcrs-static-proof-v0"
+description = "Unofficial local Martian smoke stretch check: a narrow PCRS static proof gate compared against local baselines. Not an official benchmark score."
+suite = "martian-offline"
+limit = 3
+replay_mode = "cache-first"
+max_cost_usd = 0.00
+max_duration_seconds = 600
+
+[[methods]]
+id = "baseline-diff-only"
+reviewer = "baseline-diff-only"
+
+[[methods]]
+id = "hard-specialist-plus-pcrs"
+team = "teams/hard-specialist-plus-pcrs.toml"
+
+[[methods]]
+id = "public-static-proof-gate"
+reviewer = "public-static-proof-gate"

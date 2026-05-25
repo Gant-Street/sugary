@@ -132,6 +132,58 @@ defmodule Sugary.ClaimMatcherTest do
              Sugary.ClaimMatcher.expected_claim(public_case, public_claim)
   end
 
+  test "selects the strongest public benchmark fuzzy match instead of the first match" do
+    public_case =
+      Protocol.BenchmarkCase.new(%{
+        id: "martian-smoke-migration",
+        suite: "martian-offline",
+        pr: %{title: "Migrate embeddable hosts", body: ""},
+        diff: "",
+        context: %{},
+        public_benchmark: true,
+        oracle: %{
+          expectedClaims: [
+            %{
+              id: "martian-golden-1",
+              description: "NoMethodError before_validation in EmbeddableHost",
+              category: "public_benchmark",
+              severity: "critical",
+              path: "unknown"
+            },
+            %{
+              id: "martian-golden-4",
+              description:
+                "Because this migration inserts embeddable_hosts rows with raw SQL, existing values with http://, https://, or path segments will not go through EmbeddableHost model normalization, so host lookup may fail for migrated data.",
+              category: "public_benchmark",
+              severity: "high",
+              path: "unknown"
+            }
+          ],
+          knownNonIssues: []
+        }
+      })
+
+    public_claim =
+      claim(%{
+        path: "db/migrate/20150818190757_create_embeddable_hosts.rb",
+        category: "contract",
+        claim:
+          "The migration inserts existing embeddable_hosts values through raw SQL, bypassing EmbeddableHost normalization that strips schemes and path segments; migrated hosts can fail lookup.",
+        evidence: [
+          %{
+            type: "static_diff_proof",
+            tier: 3,
+            strength: "strong",
+            summary:
+              "The diff adds before_validation host normalization but inserts raw host values in SQL."
+          }
+        ]
+      })
+
+    assert %{id: "martian-golden-4"} =
+             Sugary.ClaimMatcher.expected_claim(public_case, public_claim)
+  end
+
   test "scorer credits fuzzy matched LLM claims" do
     result = %{
       case: bench_case(),

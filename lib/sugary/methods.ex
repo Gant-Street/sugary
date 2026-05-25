@@ -98,6 +98,15 @@ defmodule Sugary.Methods do
       evidence: "static_trace_stub",
       refutation: "generic_refuter_stub",
       ranking: "expected_value_stub"
+    },
+    "public-static-proof-gate" => %{
+      id: "public-static-proof-gate",
+      class: "research",
+      context: "public_diff",
+      candidate_generation: "public_static_proof_gate",
+      evidence: "none",
+      refutation: "none",
+      ranking: "expected_value_stub"
     }
   }
 
@@ -109,7 +118,8 @@ defmodule Sugary.Methods do
     "evidence-gate" => "e-evidence-gate",
     "adversarial-refutation" => "f-adversarial-refutation",
     "calibrated-ranker" => "g-calibrated-ranker",
-    "pcrs-evidence-refuter" => "f-adversarial-refutation"
+    "pcrs-evidence-refuter" => "f-adversarial-refutation",
+    "public-static-proof-gate" => "public-static-proof-gate"
   }
 
   def all, do: @registry
