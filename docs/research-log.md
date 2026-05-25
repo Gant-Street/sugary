@@ -273,3 +273,56 @@ Interpretation:
 Next research move:
 
 Stop optimizing scalar thresholds. Build an adversarial refuter that produces explicit counterarguments for each candidate claim before ranking. The next target should reduce false-positive publish scores on the available holdout without using holdout oracle labels for tuning.
+
+## 2026-05-25: Adversarial Refuter Ranker v1
+
+Command sequence:
+
+```sh
+mix run -e 'IO.puts(Sugary.AdversarialRefuterRanker.tune_and_lock!(source_run: ".sugary/research/runs/20260525T183827Z-public-martian-pcrs-transfer-v1", method_id: "public-pcrs-static-codex-low-team", baseline_id: "codex-gpt-5.5-xhigh", refuter_ids: ["codex-gpt-5.5-xhigh"], suite: "martian-offline", limit: 25, offset: 0, id: "adversarial-refuter-ranker-v1-dev"))'
+mix run -e 'IO.puts(Sugary.AdversarialRefuterRanker.evaluate!(lock_path: ".sugary/research/runs/20260525T225108Z-adversarial-refuter-ranker-v1-dev/refuter-lock.json", source_run: ".sugary/research/runs/20260525T215029Z-public-martian-ranking-fresh-v1", baseline_id: "codex-gpt-5.5-xhigh", suite: "martian-offline", limit: 25, offset: 25, id: "adversarial-refuter-ranker-v1-holdout-26-50"))'
+```
+
+Run artifacts:
+
+```text
+.sugary/research/runs/20260525T225108Z-adversarial-refuter-ranker-v1-dev
+.sugary/research/runs/20260525T225138Z-adversarial-refuter-ranker-v1-holdout-26-50
+```
+
+Scope:
+
+- Benchmark: Martian Code Review Bench offline, local smoke only.
+- Dev slice: cases 1-25.
+- Holdout slice: cases 26-50.
+- Official score: no.
+- Leaderboard claim: no.
+- Fresh tuning: no. The refuter policy was locked before evaluation on cases 26-50.
+- Refuter source: raw `codex-gpt-5.5-xhigh` claims, used as independent no-oracle support/counterargument evidence.
+
+Dev-slice locked policy:
+
+| Policy | Recall | F1 | Usefulness | SNR | Avg comments/PR | Noise | Hits | Unique hits over raw |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-xhigh` | 0.284 | 0.368 | 0.525 | 1.105 | 1.600 | 19 | 21 | n/a |
+| `refuter_unique_guarded-top2-t3.6` | 0.243 | 0.367 | 0.750 | 3.000 | 0.960 | 6 | 18 | 6 |
+
+Holdout result:
+
+| Method | Recall | F1 | Usefulness | SNR | Avg comments/PR | Noise | Hits | Unique hits over raw |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-xhigh` | 0.190 | 0.293 | 0.632 | 1.714 | 0.760 | 7 | 12 | n/a |
+| `evidence-refutation-ranker-v1` | 0.222 | 0.322 | 0.583 | 1.400 | 0.960 | 10 | 14 | 8 |
+| `refuter_unique_guarded-top2-t3.6` | 0.143 | 0.231 | 0.600 | 1.500 | 0.600 | 6 | 9 | 3 |
+
+Interpretation:
+
+- The adversarial refuter reduced false positives compared with the previous evidence/refutation ranker: noise fell from 10 to 6 and comments fell from 24 to 15.
+- It also lowered average admitted false-positive publish score from 4.665 to 3.880.
+- However, it over-suppressed true positives. Hits fell from 14 to 9, F1 fell from 0.322 to 0.231, and it still failed raw-xhigh usefulness/SNR guardrails.
+- The result supports the direction but rejects this deterministic refuter as a promotion candidate.
+- Independent-support counterarguments are useful, but too blunt. Claims without xhigh support can still be real unique true positives; treating missing support as a broad penalty suppresses too much of the PCRS advantage.
+
+Next research move:
+
+Move from heuristic counterarguments to proof-specific refutation. For each candidate, the refuter should try to produce a concrete disproof: preexisting behavior, caller invariant, test coverage, API contract, changed-file mismatch, or benchmark/source-context contradiction. Missing independent support should be one weak signal, not the main objection.
