@@ -7,6 +7,7 @@ defmodule Sugary.Runner do
       ".sugary/research/claims",
       ".sugary/research/experiments",
       ".sugary/research/runs",
+      ".sugary/research/campaigns",
       ".sugary/research/leaderboards",
       ".sugary/research/benchmarks"
     ]

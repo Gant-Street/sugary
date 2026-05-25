@@ -117,6 +117,27 @@ defmodule Sugary.Protocol do
     def new(attrs), do: Sugary.Protocol.build!(__MODULE__, attrs)
   end
 
+  defmodule CampaignManifest do
+    @required ~w(id suite search_space)a
+    defstruct @required ++
+                [
+                  :description,
+                  :split,
+                  :fixed_baselines,
+                  :budget,
+                  :replay_mode,
+                  :primary_metric,
+                  :guardrails,
+                  :stop_conditions,
+                  :promotion_policy,
+                  :metadata,
+                  :path
+                ]
+
+    def required_fields, do: @required
+    def new(attrs), do: Sugary.Protocol.build!(__MODULE__, attrs)
+  end
+
   defmodule ReviewTeam do
     @required ~w(id reviewers)a
     defstruct @required ++

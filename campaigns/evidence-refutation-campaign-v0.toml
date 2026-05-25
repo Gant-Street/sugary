@@ -1,0 +1,40 @@
+id = "evidence-refutation-campaign-v0"
+description = "Bounded dev-split campaign for PCRS evidence, refutation, ranking, and context variants."
+suite = "agent-written-hard-fixtures"
+split = "dev"
+replay_mode = "cache-first"
+primary_metric = "research_utility"
+
+[fixed_baselines]
+method_ids = ["baseline-diff-only", "symbol-graph-reflexion"]
+team_paths = []
+
+[search_space]
+contexts = ["changed_files", "symbol_graph_stub"]
+candidate_generations = ["baseline_single_shot", "reflexion_stub"]
+evidence = ["none", "static_trace_stub"]
+refutations = ["none", "generic_refuter_stub"]
+rankings = ["fixed_threshold", "expected_value_stub"]
+team_paths = ["teams/proof-carrying-team.toml"]
+
+[budget]
+max_experiments = 12
+max_wall_time_seconds = 1200
+max_estimated_cost_usd = 1.0
+
+[guardrails]
+material_recall_regression = 0.05
+min_snr_ratio = 0.9
+max_avg_comments_per_pr = 3.0
+
+[stop_conditions]
+min_meaningful_utility_delta = 0.1
+no_improvement_patience = 6
+
+[promotion_policy]
+output = "locked_candidate_recommendation"
+holdout_required_for_claim = true
+
+[metadata]
+theory = "proof-carrying-review-search"
+autonomy_level = "L1-bounded-experiment-runner"

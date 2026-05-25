@@ -95,6 +95,19 @@ defmodule Sugary.CLI do
     {:ok, Sugary.Runner.report!(run_dir)}
   end
 
+  defp dispatch(["campaign", "run", path | rest]) do
+    opts = parse_opts(rest)
+
+    run_opts =
+      []
+      |> put_opt(:resume, Map.get(opts, "resume") == true)
+      |> put_opt(:dry_run, Map.get(opts, "dry-run") == true)
+      |> put_opt(:limit_experiments, parse_optional_int(Map.get(opts, "limit-experiments")))
+      |> put_opt(:replay_mode, Map.get(opts, "replay-mode"))
+
+    {:ok, Sugary.Campaign.run!(path, run_opts)}
+  end
+
   defp dispatch(["team", "search" | rest]) do
     opts = parse_opts(rest)
     pack = Map.fetch!(opts, "pack")
@@ -125,7 +138,7 @@ defmodule Sugary.CLI do
 
   defp dispatch(_args) do
     {:error,
-     "usage: sugary research init | sugary bench public list | sugary bench list [--suite <suite>] | sugary bench inspect --suite <suite> --limit <n> | sugary bench fetch <martian-offline|cr-bench> --local-only | sugary bench run --suite <suite> --method <id> | sugary bench compare --run <dir> [--run <dir>] | sugary experiment run <manifest> [--replay-mode <mode>] | sugary experiment report <run-dir> | sugary team search --pack <pack> --suite <suite> --max-team-size <n> | sugary reviewers check --pack <pack> | sugary promotion lock --candidate <path> --suite <suite> --dev-run <run-dir> --out <path> [--baseline-method <id>] [--baseline-team <path>] | sugary promotion run <lock> --split holdout"}
+     "usage: sugary research init | sugary bench public list | sugary bench list [--suite <suite>] | sugary bench inspect --suite <suite> --limit <n> | sugary bench fetch <martian-offline|cr-bench> --local-only | sugary bench run --suite <suite> --method <id> | sugary bench compare --run <dir> [--run <dir>] | sugary experiment run <manifest> [--replay-mode <mode>] | sugary experiment report <run-dir> | sugary campaign run <manifest> [--resume] [--dry-run] [--limit-experiments <n>] [--replay-mode <mode>] | sugary team search --pack <pack> --suite <suite> --max-team-size <n> | sugary reviewers check --pack <pack> | sugary promotion lock --candidate <path> --suite <suite> --dev-run <run-dir> --out <path> [--baseline-method <id>] [--baseline-team <path>] | sugary promotion run <lock> --split holdout"}
   end
 
   defp handle_result({:ok, message}) do
@@ -143,6 +156,12 @@ defmodule Sugary.CLI do
 
   defp parse_opts(["--local-only" | rest], acc),
     do: parse_opts(rest, Map.put(acc, "local-only", true))
+
+  defp parse_opts(["--resume" | rest], acc),
+    do: parse_opts(rest, Map.put(acc, "resume", true))
+
+  defp parse_opts(["--dry-run" | rest], acc),
+    do: parse_opts(rest, Map.put(acc, "dry-run", true))
 
   defp parse_opts(["--" <> key, value | rest], acc),
     do: parse_opts(rest, Map.put(acc, key, value))
@@ -168,4 +187,11 @@ defmodule Sugary.CLI do
 
   defp parse_int(value) when is_integer(value), do: value
   defp parse_int(value), do: value |> to_string() |> Integer.parse() |> elem(0)
+
+  defp parse_optional_int(nil), do: nil
+  defp parse_optional_int(value), do: parse_int(value)
+
+  defp put_opt(opts, _key, nil), do: opts
+  defp put_opt(opts, _key, false), do: opts
+  defp put_opt(opts, key, value), do: Keyword.put(opts, key, value)
 end

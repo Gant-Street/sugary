@@ -1,5 +1,6 @@
 defmodule Sugary.Toml do
   alias Sugary.Protocol.ExperimentManifest
+  alias Sugary.Protocol.CampaignManifest
   alias Sugary.Protocol.ReviewerPack
   alias Sugary.Protocol.ReviewTeam
 
@@ -14,6 +15,23 @@ defmodule Sugary.Toml do
     path
     |> File.read!()
     |> parse!()
+  end
+
+  def parse_campaign_file!(path) do
+    path
+    |> File.read!()
+    |> parse!()
+    |> Map.put_new("split", "dev")
+    |> Map.put_new("fixed_baselines", %{})
+    |> Map.put_new("budget", %{})
+    |> Map.put_new("replay_mode", "cache-first")
+    |> Map.put_new("primary_metric", "research_utility")
+    |> Map.put_new("guardrails", %{})
+    |> Map.put_new("stop_conditions", %{})
+    |> Map.put_new("promotion_policy", %{})
+    |> Map.put_new("metadata", %{})
+    |> Map.put("path", path)
+    |> CampaignManifest.new()
   end
 
   def parse_team_file!(path) do
@@ -84,7 +102,20 @@ defmodule Sugary.Toml do
         {doc, {:table, ["split", split]}}
 
       String.starts_with?(line, "[") ->
-        {doc, :root}
+        table =
+          line
+          |> String.trim_leading("[")
+          |> String.trim_trailing("]")
+          |> String.split(".")
+
+        doc =
+          if get_in(doc, table) == nil do
+            put_in(doc, table, %{})
+          else
+            doc
+          end
+
+        {doc, {:table, table}}
 
       true ->
         [key, value] = String.split(line, "=", parts: 2)
