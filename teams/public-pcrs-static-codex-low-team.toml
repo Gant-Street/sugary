@@ -1,0 +1,30 @@
+id = "public-pcrs-static-codex-low-team"
+description = "Public-smoke PCRS candidate: static proof claims plus low-reasoning Codex candidates, merged and ranked by Sugary."
+failure_policy = "continue"
+merge_strategy = "dedupe_by_key_location_and_claim"
+max_published_claims = 3
+metadata = { suite = "martian-offline", purpose = "public-transfer-campaign-v1", unofficial = true }
+artifact_fields = ["raw_claims", "merged_claims", "provenance", "contributions"]
+
+[[reviewers]]
+id = "public-static-proof-gate"
+type = "method"
+method = "public-static-proof-gate"
+capabilities = ["static_proof", "precision_gate"]
+
+[[reviewers]]
+id = "codex-gpt-5.5-low"
+type = "command"
+enabled = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_exec_reviewer.exs"]
+timeout_ms = 180000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "cheap_reasoning", "search"]
+env = ["SUGARY_REVIEWER_ID=codex-gpt-5.5-low", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000"]

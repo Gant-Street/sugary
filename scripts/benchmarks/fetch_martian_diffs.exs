@@ -33,7 +33,12 @@ entries =
 
 results =
   Enum.map(entries, fn {url, record} ->
-    source_url = Map.get(record, "original_url") || url
+    source_url =
+      case Map.get(record, "original_url") do
+        value when is_binary(value) and value != "" -> value
+        _other -> url
+      end
+
     diff_url = source_url <> ".diff"
     out_path = Path.join(out_dir, "#{hash.(source_url)}.diff")
 

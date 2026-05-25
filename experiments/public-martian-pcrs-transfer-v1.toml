@@ -1,0 +1,74 @@
+id = "public-martian-pcrs-transfer-v1"
+description = "Unofficial 25-case Martian local smoke campaign: raw live Codex baselines versus PCRS Codex proof gating. Not an official benchmark score."
+suite = "martian-offline"
+limit = 25
+replay_mode = "cache-first"
+max_cost_usd = 0.00
+max_duration_seconds = 7200
+
+[[methods]]
+id = "baseline-diff-only"
+reviewer = "baseline-diff-only"
+
+[[methods]]
+id = "public-static-proof-gate"
+reviewer = "public-static-proof-gate"
+
+[[methods]]
+id = "public-pcrs-static-codex-low-team"
+team = "teams/public-pcrs-static-codex-low-team.toml"
+
+[[reviewers]]
+id = "codex-gpt-5.5-low"
+type = "command"
+enabled = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_exec_reviewer.exs"]
+timeout_ms = 180000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "cheap_reasoning", "search"]
+env = ["SUGARY_REVIEWER_ID=codex-gpt-5.5-low", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000"]
+
+[[reviewers]]
+id = "codex-gpt-5.5-xhigh"
+type = "command"
+enabled = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_exec_reviewer.exs"]
+timeout_ms = 240000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "strong_validation"]
+env = ["SUGARY_REVIEWER_ID=codex-gpt-5.5-xhigh", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=xhigh", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=180000"]
+
+[[reviewers]]
+id = "pcrs-codex-proof-low"
+type = "command"
+enabled = true
+replay_mode = "refresh"
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/pcrs_codex_proof_reviewer.exs"]
+timeout_ms = 210000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "static_proof", "refutation", "ranking"]
+evidence = "static_diff_proof"
+refutation = "public_proof_refuter"
+ranking = "expected_value_stub"
+env = ["SUGARY_REVIEWER_ID=pcrs-codex-proof-low", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=4", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000", "SUGARY_PCRS_MAX_CLAIMS=4", "SUGARY_PCRS_MIN_CODEX_CONFIDENCE=0.70"]
