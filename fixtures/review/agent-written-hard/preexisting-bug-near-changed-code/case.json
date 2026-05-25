@@ -6,7 +6,7 @@
   "diff": "hard_preexisting_bug_near_changed_code moved stale_cache_ttl helper next to generated log line",
   "code_before": "def stale_cache_ttl, do: 3600",
   "code_after": "Logger.debug(\"cache read\"); def stale_cache_ttl, do: 3600",
-  "context": {"allowed": {"symbols": ["stale_cache_ttl bug predates this PR", "generated log line does not change behavior"]}},
+  "context": {"allowed": {"changed_files": ["src/cache.ex"], "symbols": ["stale_cache_ttl bug predates this PR", "generated log line does not change behavior"]}},
   "repo": {"path": "fixtures/review/agent-written-hard/preexisting-bug-near-changed-code"},
   "tags": ["agent-written", "hard", "false-positive-control"],
   "labels": {"required_context_level": "historical"},

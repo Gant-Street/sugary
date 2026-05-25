@@ -6,7 +6,7 @@
   "diff": "hard_test_only_false_confidence parser tests assert happy path but generated parser ignores quoted empty field",
   "code_before": "parse_csv(\"a,,c\") == [\"a\", \"\", \"c\"]",
   "code_after": "parse_csv(\"a,\\\"\\\",c\") == [\"a\", \"c\"]",
-  "context": {"allowed": {"symbols": ["quoted empty field is meaningful", "new tests only cover unquoted fields"]}},
+  "context": {"allowed": {"changed_files": ["test/parser_test.exs"], "symbols": ["quoted empty field is meaningful", "new tests only cover unquoted fields"]}},
   "repo": {"path": "fixtures/review/agent-written-hard/test-only-false-confidence"},
   "tags": ["agent-written", "hard", "test-gap"],
   "labels": {"required_context_level": "runtime/test"},

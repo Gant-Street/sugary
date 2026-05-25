@@ -167,23 +167,20 @@ defmodule Sugary.ResearchScorecard do
   end
 
   defp published_records(result) do
-    expected = expected_by_id(result.case)
-    known_noise = known_noise_by_id(result.case)
-
     result.final_claims
     |> Enum.filter(&(&1.publish_decision == "publish"))
     |> Enum.with_index(1)
     |> Enum.map_reduce(MapSet.new(), fn {claim, rank}, seen_hits ->
-      dedupe_key = claim.dedupe_key
-      expected_claim = Map.get(expected, dedupe_key)
-      duplicate_hit? = expected_claim && MapSet.member?(seen_hits, dedupe_key)
+      expected_claim = Sugary.ClaimMatcher.expected_claim(result.case, claim)
+      match_key = if expected_claim, do: expected_claim.id, else: claim.dedupe_key
+      duplicate_hit? = expected_claim && MapSet.member?(seen_hits, match_key)
       hit? = expected_claim && not duplicate_hit?
 
       category =
         cond do
           duplicate_hit? -> "duplicate_comment"
           hit? -> nil
-          true -> false_positive_category(claim, known_noise)
+          true -> false_positive_category(result.case, claim)
         end
 
       outcome = if hit?, do: "hit", else: "noise"
@@ -198,7 +195,7 @@ defmodule Sugary.ResearchScorecard do
         rank: rank,
         rank_bucket: rank_bucket(rank),
         claim_id: claim.id,
-        dedupe_key: dedupe_key,
+        dedupe_key: match_key,
         claim: claim.claim,
         category:
           if(expected_claim,
@@ -213,7 +210,7 @@ defmodule Sugary.ResearchScorecard do
         utility: utility
       }
 
-      seen_hits = if hit?, do: MapSet.put(seen_hits, dedupe_key), else: seen_hits
+      seen_hits = if hit?, do: MapSet.put(seen_hits, match_key), else: seen_hits
       {record, seen_hits}
     end)
     |> elem(0)
@@ -223,7 +220,12 @@ defmodule Sugary.ResearchScorecard do
     hit_keys =
       result.final_claims
       |> Enum.filter(&(&1.publish_decision == "publish"))
-      |> Enum.map(& &1.dedupe_key)
+      |> Enum.flat_map(fn claim ->
+        case Sugary.ClaimMatcher.expected_claim(result.case, claim) do
+          nil -> []
+          expected -> [expected.id]
+        end
+      end)
       |> MapSet.new()
 
     result.case.oracle
@@ -246,20 +248,28 @@ defmodule Sugary.ResearchScorecard do
     published_keys =
       result.final_claims
       |> Enum.filter(&(&1.publish_decision == "publish"))
-      |> Enum.map(& &1.dedupe_key)
+      |> Enum.flat_map(fn claim ->
+        case Sugary.ClaimMatcher.expected_claim(result.case, claim) do
+          nil -> []
+          expected -> [expected.id]
+        end
+      end)
       |> MapSet.new()
 
-    expected = expected_by_id(result.case)
-
     result.candidate_claims
-    |> Enum.filter(&Map.has_key?(expected, &1.dedupe_key))
-    |> Enum.reject(&MapSet.member?(published_keys, &1.dedupe_key))
-    |> Enum.filter(&((&1.confidence || 0.0) >= 0.7))
-    |> Enum.map(fn claim ->
+    |> Enum.flat_map(fn claim ->
+      case Sugary.ClaimMatcher.expected_claim(result.case, claim) do
+        nil -> []
+        expected -> [{claim, expected}]
+      end
+    end)
+    |> Enum.reject(fn {_claim, expected} -> MapSet.member?(published_keys, expected.id) end)
+    |> Enum.filter(fn {claim, _expected} -> (claim.confidence || 0.0) >= 0.7 end)
+    |> Enum.map(fn {claim, expected} ->
       %{
         case_id: result.case.id,
         claim_id: claim.id,
-        dedupe_key: claim.dedupe_key,
+        dedupe_key: expected.id,
         confidence: claim.confidence
       }
     end)
@@ -426,12 +436,14 @@ defmodule Sugary.ResearchScorecard do
         Map.get(report, :results, [])
         |> List.wrap()
         |> Enum.flat_map(fn result ->
-          expected = expected_by_id(result.case)
-
           result.final_claims
           |> Enum.filter(&(&1.publish_decision == "publish"))
-          |> Enum.filter(&Map.has_key?(expected, &1.dedupe_key))
-          |> Enum.map(&{"#{result.case.id}::#{&1.dedupe_key}", report.method.id})
+          |> Enum.flat_map(fn claim ->
+            case Sugary.ClaimMatcher.expected_claim(result.case, claim) do
+              nil -> []
+              expected -> [{"#{result.case.id}::#{expected.id}", report.method.id}]
+            end
+          end)
         end)
       end)
       |> Enum.group_by(fn {key, _method_id} -> key end, fn {_key, method_id} -> method_id end)
@@ -455,8 +467,8 @@ defmodule Sugary.ResearchScorecard do
   defp severity_bonus(severity) when severity in ["high", "critical"], do: 2.0
   defp severity_bonus(_severity), do: 0.0
 
-  defp false_positive_category(claim, known_noise) do
-    non_issue = Map.get(known_noise, claim.dedupe_key)
+  defp false_positive_category(bench_case, claim) do
+    non_issue = Sugary.ClaimMatcher.known_non_issue(bench_case, claim)
     trap_category = if non_issue, do: field(non_issue, :trapCategory)
 
     cond do
@@ -511,18 +523,6 @@ defmodule Sugary.ResearchScorecard do
       {number, _rest} -> number
       :error -> 98
     end
-  end
-
-  defp expected_by_id(bench_case) do
-    bench_case.oracle
-    |> Map.get(:expectedClaims, [])
-    |> Map.new(&{&1.id, &1})
-  end
-
-  defp known_noise_by_id(bench_case) do
-    bench_case.oracle
-    |> Map.get(:knownNonIssues, [])
-    |> Map.new(&{&1.id, &1})
   end
 
   defp expected_count(cases) do

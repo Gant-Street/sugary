@@ -33,32 +33,36 @@ defmodule Sugary.Scorer do
   end
 
   defp score_case(_method_id, result) do
-    expected = expected_ids(result.case)
-    known_noise = known_noise_ids(result.case)
     published = Enum.filter(result.final_claims, &(&1.publish_decision == "publish"))
-    published_keys = MapSet.new(Enum.map(published, & &1.dedupe_key))
-    candidate_keys = MapSet.new(Enum.map(result.candidate_claims, & &1.dedupe_key))
 
-    hits = MapSet.intersection(published_keys, expected) |> MapSet.size()
-    duplicate_noise = length(published) - MapSet.size(published_keys)
+    matched_expected_ids =
+      published
+      |> Enum.flat_map(fn claim ->
+        case Sugary.ClaimMatcher.expected_claim(result.case, claim) do
+          nil -> []
+          expected -> [Map.get(expected, :id)]
+        end
+      end)
+
+    hits = matched_expected_ids |> MapSet.new() |> MapSet.size()
+    duplicate_noise = length(matched_expected_ids) - hits
 
     unsupported_noise =
-      Enum.count(
-        published,
-        &(MapSet.member?(known_noise, &1.dedupe_key) or
-            not MapSet.member?(expected, &1.dedupe_key))
-      )
+      Enum.count(published, fn claim ->
+        is_nil(Sugary.ClaimMatcher.expected_claim(result.case, claim)) or
+          not is_nil(Sugary.ClaimMatcher.known_non_issue(result.case, claim))
+      end)
 
     noise = duplicate_noise + unsupported_noise
     valid = 0
 
     suppressed_true =
-      MapSet.difference(MapSet.intersection(candidate_keys, expected), published_keys)
+      MapSet.difference(candidate_hit_ids(result), published_hit_ids(result))
       |> MapSet.size()
 
     %{
       cases: 1,
-      expected_claims: MapSet.size(expected),
+      expected_claims: Sugary.ClaimMatcher.expected_ids(result.case) |> MapSet.size(),
       published_claims: length(published),
       hits: hits,
       valid_suggestions: valid,
@@ -106,12 +110,10 @@ defmodule Sugary.Scorer do
   end
 
   defp case_failures(method_id, result) do
-    expected = expected_ids(result.case)
-    known_noise = known_noise_ids(result.case)
-    known_noise_map = known_noise_map(result.case)
     published = Enum.filter(result.final_claims, &(&1.publish_decision == "publish"))
-    published_keys = MapSet.new(Enum.map(published, & &1.dedupe_key))
-    candidate_keys = MapSet.new(Enum.map(result.candidate_claims, & &1.dedupe_key))
+    expected = Sugary.ClaimMatcher.expected_ids(result.case)
+    published_keys = published_hit_ids(result)
+    candidate_keys = candidate_hit_ids(result)
 
     false_negatives =
       expected
@@ -137,14 +139,14 @@ defmodule Sugary.Scorer do
 
     false_positives =
       published
-      |> Enum.reject(&MapSet.member?(expected, &1.dedupe_key))
+      |> Enum.reject(&Sugary.ClaimMatcher.expected_claim(result.case, &1))
       |> Enum.map(fn claim ->
         FailureRecord.new(%{
           id: "#{result.case.id}-#{method_id}-fp-#{claim.dedupe_key}",
           case_id: result.case.id,
           method_id: method_id,
           type: "false_positive",
-          category: false_positive_category(claim, known_noise, known_noise_map),
+          category: false_positive_category(result.case, claim),
           claim_id: claim.dedupe_key,
           summary: "Published unsupported claim #{claim.dedupe_key}.",
           suggested_experiment:
@@ -174,23 +176,27 @@ defmodule Sugary.Scorer do
     false_negatives ++ false_positives ++ duplicate_failures
   end
 
-  defp false_positive_category(claim, known_noise, known_noise_map) do
+  defp false_positive_category(bench_case, claim) do
+    non_issue = Sugary.ClaimMatcher.known_non_issue(bench_case, claim)
+
     trap_category =
-      known_noise_map
-      |> Map.get(claim.dedupe_key, %{})
-      |> Map.get(:trapCategory)
+      non_issue
+      |> case do
+        nil -> nil
+        value -> Map.get(value, :trapCategory) || Map.get(value, "trapCategory")
+      end
 
     cond do
       is_binary(trap_category) ->
         trap_category
 
-      MapSet.member?(known_noise, claim.dedupe_key) and claim.introduced_by_pr == false ->
+      non_issue && claim.introduced_by_pr == false ->
         "preexisting_bug"
 
-      MapSet.member?(known_noise, claim.dedupe_key) and claim.category == "style" ->
+      non_issue && claim.category == "style" ->
         "stylistic_preference"
 
-      MapSet.member?(known_noise, claim.dedupe_key) ->
+      non_issue ->
         "low_severity_noise"
 
       true ->
@@ -198,24 +204,19 @@ defmodule Sugary.Scorer do
     end
   end
 
-  defp expected_ids(bench_case) do
-    bench_case.oracle
-    |> Map.get(:expectedClaims, [])
-    |> Enum.map(& &1.id)
-    |> MapSet.new()
-  end
+  defp published_hit_ids(result), do: hit_ids(result.case, result.final_claims, true)
+  defp candidate_hit_ids(result), do: hit_ids(result.case, result.candidate_claims, false)
 
-  defp known_noise_ids(bench_case) do
-    bench_case.oracle
-    |> Map.get(:knownNonIssues, [])
-    |> Enum.map(& &1.id)
+  defp hit_ids(bench_case, claims, published_only?) do
+    claims
+    |> Enum.filter(fn claim -> not published_only? or claim.publish_decision == "publish" end)
+    |> Enum.flat_map(fn claim ->
+      case Sugary.ClaimMatcher.expected_claim(bench_case, claim) do
+        nil -> []
+        expected -> [Map.get(expected, :id)]
+      end
+    end)
     |> MapSet.new()
-  end
-
-  defp known_noise_map(bench_case) do
-    bench_case.oracle
-    |> Map.get(:knownNonIssues, [])
-    |> Map.new(&{&1.id, &1})
   end
 
   defp slice_by(expected, key_fun) do
@@ -244,7 +245,7 @@ defmodule Sugary.Scorer do
       Enum.count(pairs, fn {result, claim} ->
         result.final_claims
         |> Enum.filter(&(&1.publish_decision == "publish"))
-        |> Enum.any?(&(&1.dedupe_key == claim.id))
+        |> Enum.any?(&Sugary.ClaimMatcher.matches_expected?(result.case, &1, claim))
       end)
 
     %{expected: expected, hits: hits, recall: ratio(hits, expected)}

@@ -6,7 +6,7 @@
   "diff": "hard_generated_api_hallucination hardImaginarySDK.bulkTrackEvents generated helper",
   "code_before": "AnalyticsClient.track(event)",
   "code_after": "hardImaginarySDK.bulkTrackEvents(events)",
-  "context": {"allowed": {"symbols": ["AnalyticsClient exposes track/2 and flush/0 only"]}},
+  "context": {"allowed": {"changed_files": ["src/analytics.ex"], "symbols": ["AnalyticsClient exposes track/2 and flush/0 only"]}},
   "repo": {"path": "fixtures/review/agent-written-hard/generated-api-hallucination"},
   "tags": ["agent-written", "hard", "api"],
   "labels": {"required_context_level": "changed-file"},

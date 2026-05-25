@@ -6,7 +6,7 @@
   "diff": "hard_async_race_condition Task.async writes preferences before profile transaction commits",
   "code_before": "Repo.transaction(fn -> profile = upsert_profile(user); upsert_preferences(profile.id) end)",
   "code_after": "profile_task = Task.async(fn -> upsert_profile(user) end); prefs_task = Task.async(fn -> upsert_preferences(user.id) end)",
-  "context": {"allowed": {"symbols": ["preferences requires profile row", "profile upsert is transactional"]}},
+  "context": {"allowed": {"changed_files": ["src/sync.ex"], "symbols": ["preferences requires profile row", "profile upsert is transactional"]}},
   "repo": {"path": "fixtures/review/agent-written-hard/async-race-condition"},
   "tags": ["agent-written", "hard", "runtime"],
   "labels": {"required_context_level": "runtime/test"},

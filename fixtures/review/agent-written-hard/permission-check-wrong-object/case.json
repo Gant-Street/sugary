@@ -6,7 +6,7 @@
   "diff": "hard_wrong_permission_object delete_document checks workspace.canDelete but not document.owner_id",
   "code_before": "authorize!(user, document, :delete)",
   "code_after": "authorize!(user, workspace, :delete_documents); Repo.delete(document)",
-  "context": {"allowed": {"symbols": ["workspace permission is broad", "document has owner_id and confidential flag"]}},
+  "context": {"allowed": {"changed_files": ["src/documents.ex"], "symbols": ["workspace permission is broad", "document has owner_id and confidential flag"]}},
   "repo": {"path": "fixtures/review/agent-written-hard/permission-check-wrong-object"},
   "tags": ["agent-written", "hard", "security"],
   "labels": {"required_context_level": "cross-file"},

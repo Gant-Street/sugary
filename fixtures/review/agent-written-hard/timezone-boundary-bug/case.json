@@ -6,7 +6,7 @@
   "diff": "hard_timezone_boundary converts account local midnight to UTC after truncating date",
   "code_before": "account.timezone |> local_midnight(date) |> DateTime.shift_zone!(\"UTC\")",
   "code_after": "date |> DateTime.new!(~T[00:00:00], \"UTC\") |> shift_to_account_zone(account)",
-  "context": {"allowed": {"symbols": ["billing cutoff is account-local", "UTC truncation changes date for negative offsets"]}},
+  "context": {"allowed": {"changed_files": ["src/billing.ex"], "symbols": ["billing cutoff is account-local", "UTC truncation changes date for negative offsets"]}},
   "repo": {"path": "fixtures/review/agent-written-hard/timezone-boundary-bug"},
   "tags": ["agent-written", "hard", "edge-case"],
   "labels": {"required_context_level": "runtime/test"},

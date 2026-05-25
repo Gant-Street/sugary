@@ -6,7 +6,7 @@
   "diff": "hard_tenant_leak generated export uses account_id param without tenant_scope middleware",
   "code_before": "scope_through(:tenant); get('/invoices/export', ExportController, :index)",
   "code_after": "get('/admin/invoices/export/:account_id', ExportController, :index)",
-  "context": {"allowed": {"symbols": ["tenant_scope middleware enforces tenant_id", "account_id route param is user-controlled"]}},
+  "context": {"allowed": {"changed_files": ["src/routes.ex"], "symbols": ["tenant_scope middleware enforces tenant_id", "account_id route param is user-controlled"]}},
   "repo": {"path": "fixtures/review/agent-written-hard/tenant-isolation-leak"},
   "tags": ["agent-written", "hard", "security"],
   "labels": {"required_context_level": "cross-file"},

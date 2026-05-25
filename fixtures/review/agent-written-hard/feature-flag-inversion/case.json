@@ -6,7 +6,7 @@
   "diff": "hard_feature_flag_inversion generated code uses unless beta_onboarding_enabled",
   "code_before": "if Feature.enabled?(:beta_onboarding, account), do: new_flow(), else: old_flow()",
   "code_after": "unless Feature.enabled?(:beta_onboarding, account), do: new_flow(), else: old_flow()",
-  "context": {"allowed": {"symbols": ["beta_onboarding true means new flow", "old_flow remains default"]}},
+  "context": {"allowed": {"changed_files": ["src/onboarding.ex"], "symbols": ["beta_onboarding true means new flow", "old_flow remains default"]}},
   "repo": {"path": "fixtures/review/agent-written-hard/feature-flag-inversion"},
   "tags": ["agent-written", "hard", "logic"],
   "labels": {"required_context_level": "changed-file"},

@@ -56,6 +56,7 @@ mix escript.build
 ./sugary experiment run experiments/public-cr-bench-smoke-v0.toml --replay-mode cache-first
 ./sugary experiment run experiments/evidence-refutation-ablation-v0.toml
 ./sugary campaign run campaigns/evidence-refutation-campaign-v0.toml --limit-experiments 4
+./sugary experiment run experiments/codex-live-smoke-v0.toml --replay-mode cache-first
 ./sugary bench compare --run .sugary/research/runs/<local-run> --run .sugary/research/public-smoke/<public-run>
 ```
 

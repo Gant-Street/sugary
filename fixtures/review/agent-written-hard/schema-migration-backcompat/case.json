@@ -6,7 +6,7 @@
   "diff": "hard_schema_backcompat migration removes legacy profile_name before compatibility layer reads it",
   "code_before": "field :profile_name, :string; field :display_name, :string",
   "code_after": "remove :profile_name; compatibility_layer maps profile_name on read",
-  "context": {"allowed": {"symbols": ["mobile clients still send profile_name", "compatibility layer runs after DB load"]}},
+  "context": {"allowed": {"changed_files": ["priv/repo/migrations/profile_v3.exs"], "symbols": ["mobile clients still send profile_name", "compatibility layer runs after DB load"]}},
   "repo": {"path": "fixtures/review/agent-written-hard/schema-migration-backcompat"},
   "tags": ["agent-written", "hard", "contract"],
   "labels": {"required_context_level": "contract"},

@@ -1,0 +1,49 @@
+id = "codex-live-smoke-v0"
+description = "First live Codex CLI reviewer smoke: compare cheap and strong reasoning profiles on hard dev fixtures."
+suite = "agent-written-hard-fixtures"
+split = "dev"
+replay_mode = "cache-first"
+max_cost_usd = 0.00
+max_duration_seconds = 1800
+
+[[methods]]
+id = "pcrs-evidence-refuter"
+reviewer = "pcrs-evidence-refuter"
+
+[[methods]]
+id = "hard-specialist-plus-pcrs"
+team = "teams/hard-specialist-plus-pcrs.toml"
+
+[[reviewers]]
+id = "codex-gpt-5.5-low"
+type = "command"
+enabled = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_exec_reviewer.exs"]
+timeout_ms = 180000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "cheap_reasoning", "search"]
+env = ["SUGARY_REVIEWER_ID=codex-gpt-5.5-low", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3"]
+
+[[reviewers]]
+id = "codex-gpt-5.5-xhigh"
+type = "command"
+enabled = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_exec_reviewer.exs"]
+timeout_ms = 240000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "strong_validation"]
+env = ["SUGARY_REVIEWER_ID=codex-gpt-5.5-xhigh", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=xhigh", "SUGARY_CODEX_MAX_CLAIMS=3"]

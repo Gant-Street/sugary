@@ -6,7 +6,7 @@
   "diff": "hard_pagination_off_by_one generated cursor uses <= limit and drops has_more sentinel",
   "code_before": "items = query |> limit(page_size + 1); has_more = length(items) > page_size",
   "code_after": "items = query |> limit(page_size); has_more = length(items) >= page_size",
-  "context": {"allowed": {"symbols": ["has_more requires sentinel row", "page_size is user visible"]}},
+  "context": {"allowed": {"changed_files": ["src/activity.ex"], "symbols": ["has_more requires sentinel row", "page_size is user visible"]}},
   "repo": {"path": "fixtures/review/agent-written-hard/pagination-off-by-one"},
   "tags": ["agent-written", "hard", "edge-case"],
   "labels": {"required_context_level": "changed-file"},

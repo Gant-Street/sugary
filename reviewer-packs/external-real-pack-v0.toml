@@ -46,13 +46,14 @@ id = "codex-json"
 type = "command"
 enabled = false
 required_executable = "codex"
-command = "scripts/reviewers/codex_reviewer.sh"
-args = []
+command = "elixir"
+args = ["scripts/reviewers/codex_exec_reviewer.exs"]
 timeout_ms = 120000
 capabilities = ["llm", "repo_navigation"]
-cost_model = "user_provider_key"
+cost_model = "chatgpt_auth_or_user_provider"
 requires_network = true
-requires_secrets = ["CODEX_API_KEY"]
+requires_secrets = []
+env = ["SUGARY_REVIEWER_ID=codex-json", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=medium", "SUGARY_CODEX_MAX_CLAIMS=3"]
 
 [[reviewers]]
 id = "generic-llm-reviewer"

@@ -6,7 +6,7 @@
   "diff": "hard_null_contract loadUserRetryResult now passes cached_user into buildSessionFromUser",
   "code_before": "loadUserRetryResult(id) |> case do {:ok, user} -> buildSessionFromUser(user) end",
   "code_after": "cached_user = cache_fetch(id); buildSessionFromUser(cached_user)",
-  "context": {"allowed": {"symbols": ["cache_fetch returns User | nil", "buildSessionFromUser requires User", "caller previously matched {:ok, user}"]}},
+  "context": {"allowed": {"changed_files": ["src/session.ex"], "symbols": ["cache_fetch returns User | nil", "buildSessionFromUser requires User", "caller previously matched {:ok, user}"]}},
   "repo": {"path": "fixtures/review/agent-written-hard/cross-file-null-contract"},
   "tags": ["agent-written", "hard", "cross-file"],
   "labels": {"required_context_level": "cross-file"},
