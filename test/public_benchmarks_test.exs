@@ -132,6 +132,41 @@ defmodule Sugary.PublicBenchmarksTest do
     end)
   end
 
+  test "public benchmark input includes materialized workspace only for repo-aware methods" do
+    dir = mock_benchmark_dir("martian-offline")
+
+    with_env("MARTIAN_BENCH_DIR", dir, fn ->
+      {:ok, [bench_case]} = Sugary.Martian.list_cases(1)
+      workspace = Sugary.RepoMaterializer.workspace_paths(bench_case.id)
+      File.mkdir_p!(workspace.base)
+      File.mkdir_p!(workspace.head)
+
+      on_exit(fn -> File.rm_rf(workspace.root) end)
+
+      {:ok, [bench_case]} = Sugary.Martian.list_cases(1)
+
+      diff_only =
+        Sugary.Fixtures.input_bundle(bench_case, Sugary.Methods.get!("baseline-diff-only"))
+
+      repo_aware =
+        Sugary.Fixtures.input_bundle(bench_case, %{
+          id: "repo-aware",
+          include_workspace: true
+        })
+
+      refute Map.has_key?(diff_only.metadata, :workspace)
+      assert File.dir?(repo_aware.metadata.workspace.head)
+      assert File.dir?(repo_aware.metadata.workspace.base)
+      assert repo_aware.metadata.workspace.head != Path.expand(workspace.head)
+      assert repo_aware.metadata.workspace.base != Path.expand(workspace.base)
+      assert repo_aware.metadata.workspace.head =~ "/.sugary/research/blind-workspaces/"
+
+      json = Sugary.Json.encode!(repo_aware)
+      refute String.contains?(json, "expectedClaims")
+      refute String.contains?(json, "martian-offline-source-case-001")
+    end)
+  end
+
   test "public leakage detector catches oracle and source case id leaks" do
     dir = mock_benchmark_dir("martian-offline")
 

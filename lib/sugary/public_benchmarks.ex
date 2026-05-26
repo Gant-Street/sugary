@@ -99,13 +99,15 @@ defmodule Sugary.PublicBenchmarks do
     source_commit = git_sha(source_root)
     now = DateTime.utc_now() |> Calendar.strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    case_id = "#{suite}-#{index}-#{slug(original_id)}"
+
     BenchmarkCase.new(%{
-      id: "#{suite}-#{index}-#{slug(original_id)}",
+      id: case_id,
       suite: suite,
       pr: %{title: title, body: body, original_id: original_id},
       diff: diff,
       context: %{allowed: %{changed_files: changed_files(decoded), benchmark: suite}},
-      repo: %{name: repo, source_path: path},
+      repo: repo_metadata(repo, path, case_id),
       oracle: %{expectedClaims: expected, knownNonIssues: known_non_issues},
       tags: ["public-smoke", suite],
       public_benchmark: true,
@@ -140,6 +142,21 @@ defmodule Sugary.PublicBenchmarks do
     |> Enum.map(fn {{path, raw}, index} ->
       normalize_case(suite, path, raw, source_root, index)
     end)
+  end
+
+  defp repo_metadata(repo, source_path, case_id) do
+    workspace = Sugary.RepoMaterializer.workspace_paths(case_id)
+
+    base = Path.expand(workspace.base)
+    head = Path.expand(workspace.head)
+
+    metadata = %{name: repo, source_path: source_path}
+
+    if File.dir?(base) and File.dir?(head) do
+      Map.put(metadata, :workspace, %{root: Path.expand(workspace.root), base: base, head: head})
+    else
+      metadata
+    end
   end
 
   def leakage_report(run_dir, cases) do

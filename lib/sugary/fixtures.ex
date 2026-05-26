@@ -69,6 +69,7 @@ defmodule Sugary.Fixtures do
 
   def input_bundle(%BenchmarkCase{} = bench_case, method) do
     blind? = bench_case.split == "holdout" or public_benchmark?(bench_case)
+    metadata = input_metadata(bench_case, method, blind?)
 
     ReviewInputBundle.new(%{
       case_id: if(blind?, do: blind_case_id(bench_case.id), else: bench_case.id),
@@ -81,16 +82,85 @@ defmodule Sugary.Fixtures do
           else: Map.get(bench_case.context || %{}, :allowed, %{})
         ),
       method: sanitize_method(method),
-      metadata:
-        if(blind?,
-          do: blind_metadata(bench_case),
-          else: %{tags: bench_case.tags || [], split: bench_case.split}
-        )
+      metadata: metadata
     })
   end
 
   defp public_benchmark?(bench_case) do
     bench_case.public_benchmark == true or bench_case.suite in ["martian-offline", "cr-bench"]
+  end
+
+  defp input_metadata(bench_case, method, blind?) do
+    base =
+      if blind? do
+        blind_metadata(bench_case)
+      else
+        %{tags: bench_case.tags || [], split: bench_case.split}
+      end
+
+    case workspace_metadata(bench_case, method) do
+      nil -> base
+      workspace -> Map.put(base, :workspace, workspace)
+    end
+  end
+
+  defp workspace_metadata(bench_case, method) do
+    if Map.get(method, :include_workspace) == true do
+      workspace =
+        bench_case.repo
+        |> case do
+          %{workspace: value} -> value
+          %{"workspace" => value} -> value
+          _other -> nil
+        end
+
+      case workspace do
+        %{head: head, base: base} -> valid_workspace(head, base)
+        %{"head" => head, "base" => base} -> valid_workspace(head, base)
+        _other -> nil
+      end
+    end
+  end
+
+  defp valid_workspace(head, base) do
+    head = Path.expand(to_string(head))
+    base = Path.expand(to_string(base))
+
+    if File.dir?(head) and File.dir?(base) do
+      blind_workspace(head, base)
+    end
+  end
+
+  defp blind_workspace(head, base) do
+    root =
+      Path.join([
+        ".sugary/research/blind-workspaces",
+        :crypto.hash(:sha256, head <> "\n" <> base) |> Base.encode16(case: :lower)
+      ])
+
+    blind_head = Path.join(root, "head")
+    blind_base = Path.join(root, "base")
+
+    ensure_symlink!(head, blind_head)
+    ensure_symlink!(base, blind_base)
+
+    %{head: Path.expand(blind_head), base: Path.expand(blind_base)}
+  end
+
+  defp ensure_symlink!(target, link) do
+    File.mkdir_p!(Path.dirname(link))
+
+    cond do
+      File.lstat(link) == {:ok, %{type: :symlink}} ->
+        :ok
+
+      File.exists?(link) ->
+        File.rm_rf!(link)
+        File.ln_s!(target, link)
+
+      true ->
+        File.ln_s!(target, link)
+    end
   end
 
   defp blind_metadata(bench_case) do

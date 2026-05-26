@@ -51,6 +51,11 @@ defmodule Sugary.RepoMaterializer do
     out_dir
   end
 
+  def workspace_paths(case_id) do
+    root = Path.join(@workspace_root, safe_id(case_id))
+    %{root: root, base: Path.join(root, "base"), head: Path.join(root, "head")}
+  end
+
   def parse_github_url(url) when is_binary(url) do
     uri = URI.parse(url)
     path = uri.path || ""
@@ -469,11 +474,6 @@ defmodule Sugary.RepoMaterializer do
     do: Sugary.PublicBenchmarks.load_cases!(suite, opts)
 
   defp load_cases!(suite, opts), do: Sugary.Fixtures.load_suite!(suite, opts)
-
-  defp workspace_paths(case_id) do
-    root = Path.join(@workspace_root, safe_id(case_id))
-    %{root: root, base: Path.join(root, "base"), head: Path.join(root, "head")}
-  end
 
   defp repo_cache_path(target),
     do: Path.join([@repo_cache, "github.com", target.owner, "#{target.repo}.git"])
