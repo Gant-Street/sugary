@@ -1,0 +1,112 @@
+id = "martian-materialized-dev18-pcrs-v1"
+description = "Directional 18-case Martian offline gauntlet over tool-ready materialized cases, testing whether repo-aware PCRS beats diff-only and repo-aware raw Codex. Unofficial local smoke, not an official benchmark score."
+suite = "martian-offline"
+limit = 18
+offset = 0
+replay_mode = "cache-first"
+primary_metric = "usefulness_adjusted_f1"
+
+[guardrails]
+min_relative_f1 = 1.10
+min_snr_ratio = 0.9
+min_absolute_snr = 1.5
+min_usefulness_ratio = 1.0
+min_absolute_usefulness = 0.60
+max_added_noise = 0
+max_avg_comments_per_pr = 1.5
+min_unique_hits = 1
+
+[[variables]]
+id = "native-codex-diff-low"
+role = "native_harness_reference"
+description = "Codex CLI reviewing the blinded Martian PR diff only."
+ingredients = ["native_harness", "llm", "codex_cli", "diff_only"]
+type = "command"
+enabled = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_exec_reviewer.exs"]
+timeout_ms = 180000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "diff_only"]
+env = ["SUGARY_REVIEWER_ID=native-codex-diff-low", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000"]
+
+[[variables]]
+id = "native-codex-repo-low"
+role = "native_harness_reference"
+description = "Codex CLI reviewing the blinded Martian PR diff with a read-only materialized head checkout when available."
+ingredients = ["native_harness", "llm", "codex_cli", "repo_workspace"]
+type = "command"
+enabled = true
+include_workspace = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_repo_reviewer.exs"]
+timeout_ms = 180000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "repo_workspace", "search"]
+env = ["SUGARY_REVIEWER_ID=native-codex-repo-low", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000"]
+
+[[variables]]
+id = "public-static-proof-gate"
+role = "candidate"
+description = "Current deterministic public static proof gate."
+ingredients = ["pcrs", "static_proof", "precision_gate"]
+reviewer = "public-static-proof-gate"
+
+[[variables]]
+id = "pcrs-codex-proof-low"
+role = "candidate"
+description = "Codex proof-carrying reviewer over the blinded Martian PR diff."
+ingredients = ["pcrs", "llm", "proof_gate", "refutation", "diff_only"]
+type = "command"
+enabled = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/pcrs_codex_proof_reviewer.exs"]
+timeout_ms = 210000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "static_proof", "refutation", "ranking", "diff_only"]
+evidence = "static_diff_proof"
+refutation = "public_proof_refuter"
+ranking = "expected_value_stub"
+env = ["SUGARY_REVIEWER_ID=pcrs-codex-proof-low", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=4", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000", "SUGARY_PCRS_MAX_CLAIMS=4", "SUGARY_PCRS_MIN_CODEX_CONFIDENCE=0.70"]
+
+[[variables]]
+id = "pcrs-codex-repo-low"
+role = "candidate"
+description = "Same PCRS proof/refutation wrapper, but the inner Codex reviewer receives a blind materialized repo checkout."
+ingredients = ["pcrs", "llm", "proof_gate", "refutation", "repo_workspace"]
+type = "command"
+enabled = true
+include_workspace = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/pcrs_codex_proof_reviewer.exs"]
+timeout_ms = 240000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "static_proof", "refutation", "ranking", "repo_workspace", "search"]
+evidence = "static_repo_proof"
+refutation = "public_proof_refuter"
+ranking = "expected_value_stub"
+env = ["SUGARY_REVIEWER_ID=pcrs-codex-repo-low", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=4", "SUGARY_CODEX_INNER_TIMEOUT_MS=150000", "SUGARY_PCRS_MAX_CLAIMS=4", "SUGARY_PCRS_MIN_CODEX_CONFIDENCE=0.70", "SUGARY_PCRS_INNER_REVIEWER_SCRIPT=scripts/reviewers/codex_repo_reviewer.exs"]

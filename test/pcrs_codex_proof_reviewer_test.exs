@@ -66,5 +66,8 @@ defmodule Sugary.PcrsCodexProofReviewerTest do
     assert Enum.all?(claims, &(&1["source"]["proof_gate"] == true))
     assert Enum.all?(claims, &(&1["evidence"] |> hd() |> Map.get("type") == "static_diff_proof"))
     assert result["artifacts"] |> hd() |> Map.get("codex_claims") == 0
+
+    assert result["artifacts"] |> hd() |> Map.get("inner_reviewer_script") ==
+             "scripts/reviewers/codex_exec_reviewer.exs"
   end
 end

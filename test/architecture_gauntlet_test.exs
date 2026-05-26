@@ -202,4 +202,49 @@ defmodule Sugary.ArchitectureGauntletTest do
     assert composition["beats_best_comparator"] == false
     assert composition["decision"] == "quarantine"
   end
+
+  test "absolute guardrails can block an otherwise improved candidate" do
+    dir = tmp_dir()
+
+    gauntlet_path =
+      write!(
+        dir,
+        "architecture.toml",
+        """
+        id = "architecture-absolute-guardrail-test"
+        suite = "local-fixtures"
+
+        [guardrails]
+        min_absolute_snr = 999.0
+
+        [[variables]]
+        id = "golden-noisy"
+        role = "reference"
+        reviewer = "golden-noisy-reviewer"
+        ingredients = ["reference"]
+
+        [[variables]]
+        id = "golden-perfect"
+        role = "candidate"
+        reviewer = "golden-perfect-reviewer"
+        ingredients = ["noise_control"]
+        """
+      )
+
+    out_dir = Sugary.ArchitectureGauntlet.run!(gauntlet_path)
+    underlying_run = out_dir |> Path.join("underlying-run.txt") |> File.read!() |> String.trim()
+    on_exit(fn -> File.rm_rf(out_dir) end)
+    on_exit(fn -> File.rm_rf(underlying_run) end)
+
+    decision = Sugary.Json.read!(Path.join(out_dir, "decision.json"))
+
+    candidate =
+      Enum.find(
+        decision["variable_decisions"],
+        &(get_in(&1, ["card", "id"]) == "golden-perfect")
+      )
+
+    assert get_in(candidate, ["checks", "absolute_snr"]) == false
+    assert candidate["decision"] == "quarantine"
+  end
 end

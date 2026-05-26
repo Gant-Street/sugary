@@ -354,14 +354,20 @@ defmodule Sugary.ArchitectureGauntlet do
   defp guardrail_checks(card, reference, unique_hits, guardrails) do
     min_snr_ratio = number_guardrail(guardrails, :min_snr_ratio, 0.9)
     min_usefulness_ratio = number_guardrail(guardrails, :min_usefulness_ratio, 1.0)
+    min_relative_f1 = number_guardrail(guardrails, :min_relative_f1, 1.0)
+    min_absolute_snr = number_guardrail(guardrails, :min_absolute_snr, 0.0)
+    min_absolute_usefulness = number_guardrail(guardrails, :min_absolute_usefulness, 0.0)
     max_added_noise = number_guardrail(guardrails, :max_added_noise, 0)
     max_avg_comments = number_guardrail(guardrails, :max_avg_comments_per_pr, 3.0)
     min_unique_hits = number_guardrail(guardrails, :min_unique_hits, 1)
 
     %{
       improves_primary_metric: improves?(card.score, reference.score),
+      f1_margin: card.score.f1 >= reference.score.f1 * min_relative_f1,
       usefulness: card.score.usefulness >= reference.score.usefulness * min_usefulness_ratio,
+      absolute_usefulness: card.score.usefulness >= min_absolute_usefulness,
       snr: card.score.snr >= reference.score.snr * min_snr_ratio,
+      absolute_snr: card.score.snr >= min_absolute_snr,
       noise: card.score.noise <= reference.score.noise + max_added_noise,
       comments: card.score.avg_comments_per_pr <= max_avg_comments,
       unique_signal_or_noise_reduction:

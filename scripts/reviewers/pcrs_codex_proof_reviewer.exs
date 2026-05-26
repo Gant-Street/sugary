@@ -7,6 +7,9 @@ end
 
 method_id = System.get_env("SUGARY_REVIEWER_ID") || "pcrs-codex-proof"
 max_claims = String.to_integer(System.get_env("SUGARY_PCRS_MAX_CLAIMS") || "4")
+inner_reviewer_script =
+  System.get_env("SUGARY_PCRS_INNER_REVIEWER_SCRIPT") ||
+    "scripts/reviewers/codex_exec_reviewer.exs"
 
 min_codex_confidence =
   String.to_float(System.get_env("SUGARY_PCRS_MIN_CODEX_CONFIDENCE") || "0.88")
@@ -241,7 +244,7 @@ run_codex = fn ->
 
     request = %{
       command: System.get_env("SUGARY_ELIXIR_BIN") || "elixir",
-      args: ["scripts/reviewers/codex_exec_reviewer.exs"],
+      args: [inner_reviewer_script],
       cwd: File.cwd!(),
       env: %{},
       input: input,
@@ -364,6 +367,7 @@ filtered_codex_claims =
       method: method_id,
       tool: "pcrs_codex_proof",
       candidate_source: "codex",
+      inner_reviewer_script: inner_reviewer_script,
       model: System.get_env("SUGARY_CODEX_MODEL") || "gpt-5.5",
       reasoning_effort: System.get_env("SUGARY_CODEX_REASONING_EFFORT") || "low",
       pcrs_filter: "confidence+diff-token-support"
@@ -390,7 +394,8 @@ artifacts =
       static_claims: length(static_claims),
       codex_claims: length(codex_claims),
       codex_claims_kept: length(filtered_codex_claims),
-      min_codex_confidence: min_codex_confidence
+      min_codex_confidence: min_codex_confidence,
+      inner_reviewer_script: inner_reviewer_script
     }
     | Map.get(codex_result, "artifacts", [])
   ]
