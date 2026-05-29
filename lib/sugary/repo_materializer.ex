@@ -152,7 +152,30 @@ defmodule Sugary.RepoMaterializer do
     end
   end
 
-  defp resolve_metadata(%{target: %{type: "pull_request"} = target} = record) do
+  defp resolve_metadata(%{target: %{type: "pull_request"}} = record) do
+    case git_pull_request_metadata(record) do
+      {:ok, refs} ->
+        resolved_metadata_record(record, refs)
+
+      {:error, git_reason} ->
+        resolve_pull_request_metadata_with_api(record, git_reason)
+    end
+  end
+
+  defp resolve_metadata(%{target: %{type: "commit"}} = record) do
+    case git_commit_metadata(record) do
+      {:ok, refs} ->
+        resolved_metadata_record(record, refs)
+
+      {:error, git_reason} ->
+        resolve_commit_metadata_with_api(record, git_reason)
+    end
+  end
+
+  defp resolve_pull_request_metadata_with_api(
+         %{target: %{type: "pull_request"} = target} = record,
+         git_reason
+       ) do
     case github_json("/repos/#{target.owner}/#{target.repo}/pulls/#{target.number}") do
       {:ok, body} ->
         refs = %{
@@ -161,23 +184,23 @@ defmodule Sugary.RepoMaterializer do
           head_sha: get_in(body, ["head", "sha"]),
           head_ref: get_in(body, ["head", "ref"]),
           head_repo_full_name: get_in(body, ["head", "repo", "full_name"]),
+          resolution_strategy: "github_api",
+          git_fallback_reason: git_reason,
           state: body["state"],
           merged: body["merged"]
         }
 
-        record
-        |> Map.put(
-          :status,
-          if(refs.base_sha && refs.head_sha, do: "metadata_resolved", else: "metadata_incomplete")
-        )
-        |> Map.put(:refs, refs)
+        resolved_metadata_record(record, refs)
 
       {:error, reason} ->
-        %{record | status: "metadata_failed", reason: reason}
+        %{record | status: "metadata_failed", reason: "#{git_reason}; #{reason}"}
     end
   end
 
-  defp resolve_metadata(%{target: %{type: "commit"} = target} = record) do
+  defp resolve_commit_metadata_with_api(
+         %{target: %{type: "commit"} = target} = record,
+         git_reason
+       ) do
     case github_json("/repos/#{target.owner}/#{target.repo}/commits/#{target.head_sha}") do
       {:ok, body} ->
         parent = body |> Map.get("parents", []) |> List.first() || %{}
@@ -185,18 +208,94 @@ defmodule Sugary.RepoMaterializer do
         refs = %{
           base_sha: parent["sha"],
           head_sha: body["sha"] || target.head_sha,
+          resolution_strategy: "github_api",
+          git_fallback_reason: git_reason,
           parent_count: length(Map.get(body, "parents", []))
         }
 
-        record
-        |> Map.put(
-          :status,
-          if(refs.base_sha && refs.head_sha, do: "metadata_resolved", else: "metadata_incomplete")
-        )
-        |> Map.put(:refs, refs)
+        resolved_metadata_record(record, refs)
 
       {:error, reason} ->
-        %{record | status: "metadata_failed", reason: reason}
+        %{record | status: "metadata_failed", reason: "#{git_reason}; #{reason}"}
+    end
+  end
+
+  defp resolved_metadata_record(record, refs) do
+    record
+    |> Map.put(
+      :status,
+      if(refs.base_sha && refs.head_sha, do: "metadata_resolved", else: "metadata_incomplete")
+    )
+    |> Map.put(:refs, refs)
+  end
+
+  defp git_pull_request_metadata(%{target: target}) do
+    repo_dir = repo_cache_path(target)
+    head_ref = "refs/sugary/pull/#{target.number}/head"
+    merge_ref = "refs/sugary/pull/#{target.number}/merge"
+
+    with :ok <- ensure_bare_repo(repo_dir, target.clone_url),
+         :ok <- fetch_pr_head_ref(repo_dir, target.number),
+         {:ok, head_sha} <- rev_parse(repo_dir, head_ref) do
+      case fetch_pr_merge_ref(repo_dir, target.number) do
+        :ok ->
+          case merge_parent_refs(repo_dir, merge_ref) do
+            {:ok, base_sha, merge_head_sha} ->
+              {:ok,
+               %{
+                 base_sha: base_sha,
+                 head_sha: merge_head_sha,
+                 head_ref: "refs/pull/#{target.number}/head",
+                 merge_ref: "refs/pull/#{target.number}/merge",
+                 resolution_strategy: "git_pull_merge"
+               }}
+
+            {:error, _reason} ->
+              git_pull_request_merge_base_metadata(repo_dir, target, head_sha)
+          end
+
+        {:error, _reason} ->
+          git_pull_request_merge_base_metadata(repo_dir, target, head_sha)
+      end
+    else
+      {:error, reason} -> {:error, "git PR metadata failed: #{reason}"}
+    end
+  end
+
+  defp git_pull_request_merge_base_metadata(repo_dir, target, head_sha) do
+    with {:ok, default_branch} <- default_branch(repo_dir),
+         :ok <- fetch_branch_ref(repo_dir, default_branch),
+         {:ok, base_sha} <-
+           merge_base(repo_dir, "refs/sugary/default/#{default_branch}", head_sha) do
+      {:ok,
+       %{
+         base_sha: base_sha,
+         base_ref: default_branch,
+         head_sha: head_sha,
+         head_ref: "refs/pull/#{target.number}/head",
+         resolution_strategy: "git_merge_base"
+       }}
+    else
+      {:error, reason} -> {:error, "git merge-base metadata failed: #{reason}"}
+    end
+  end
+
+  defp git_commit_metadata(%{target: target}) do
+    repo_dir = repo_cache_path(target)
+
+    with :ok <- ensure_bare_repo(repo_dir, target.clone_url),
+         :ok <- fetch_ref(repo_dir, target.head_sha),
+         {:ok, head_sha} <- rev_parse(repo_dir, target.head_sha),
+         {:ok, base_sha} <- rev_parse(repo_dir, "#{head_sha}^") do
+      {:ok,
+       %{
+         base_sha: base_sha,
+         head_sha: head_sha,
+         parent_count: 1,
+         resolution_strategy: "git_commit_parent"
+       }}
+    else
+      {:error, reason} -> {:error, "git commit metadata failed: #{reason}"}
     end
   end
 
@@ -270,17 +369,7 @@ defmodule Sugary.RepoMaterializer do
   end
 
   defp fetch_head_ref(repo_dir, %{type: "pull_request", number: number}, sha) do
-    case git(
-           [
-             "--git-dir",
-             repo_dir,
-             "fetch",
-             "--filter=blob:none",
-             "origin",
-             "+refs/pull/#{number}/head:refs/sugary/pull/#{number}/head"
-           ],
-           "git fetch PR head failed"
-         ) do
+    case fetch_pr_head_ref(repo_dir, number) do
       :ok -> :ok
       {:error, _reason} -> fetch_ref(repo_dir, sha)
     end
@@ -288,19 +377,122 @@ defmodule Sugary.RepoMaterializer do
 
   defp fetch_head_ref(repo_dir, _target, sha), do: fetch_ref(repo_dir, sha)
 
-  defp fetch_ref(repo_dir, sha) when is_binary(sha) and sha != "" do
-    case System.cmd("git", ["--git-dir", repo_dir, "fetch", "--filter=blob:none", "origin", sha],
-           stderr_to_stdout: true
-         ) do
-      {_out, 0} ->
-        :ok
+  defp fetch_pr_head_ref(repo_dir, number) do
+    git(
+      [
+        "--git-dir",
+        repo_dir,
+        "fetch",
+        "--filter=blob:none",
+        "origin",
+        "+refs/pull/#{number}/head:refs/sugary/pull/#{number}/head"
+      ],
+      "git fetch PR head failed"
+    )
+  end
 
-      {out, status} ->
-        {:error, "git fetch #{sha} failed with #{status}: #{String.slice(out, 0, 500)}"}
+  defp fetch_pr_merge_ref(repo_dir, number) do
+    git(
+      [
+        "--git-dir",
+        repo_dir,
+        "fetch",
+        "--filter=blob:none",
+        "origin",
+        "+refs/pull/#{number}/merge:refs/sugary/pull/#{number}/merge"
+      ],
+      "git fetch PR merge failed"
+    )
+  end
+
+  defp fetch_branch_ref(repo_dir, branch) do
+    git(
+      [
+        "--git-dir",
+        repo_dir,
+        "fetch",
+        "--filter=blob:none",
+        "origin",
+        "+refs/heads/#{branch}:refs/sugary/default/#{branch}"
+      ],
+      "git fetch default branch failed"
+    )
+  end
+
+  defp fetch_ref(repo_dir, sha) when is_binary(sha) and sha != "" do
+    if object_exists?(repo_dir, sha) do
+      :ok
+    else
+      case System.cmd(
+             "git",
+             ["--git-dir", repo_dir, "fetch", "--filter=blob:none", "origin", sha],
+             stderr_to_stdout: true
+           ) do
+        {_out, 0} ->
+          :ok
+
+        {out, status} ->
+          {:error, "git fetch #{sha} failed with #{status}: #{String.slice(out, 0, 500)}"}
+      end
     end
   end
 
   defp fetch_ref(_repo_dir, _sha), do: {:error, "missing commit sha"}
+
+  defp rev_parse(repo_dir, ref) do
+    case System.cmd("git", ["--git-dir", repo_dir, "rev-parse", "--verify", ref],
+           stderr_to_stdout: true
+         ) do
+      {out, 0} ->
+        {:ok, out |> String.trim() |> String.downcase()}
+
+      {out, status} ->
+        {:error, "git rev-parse #{ref} failed with #{status}: #{String.slice(out, 0, 500)}"}
+    end
+  end
+
+  defp merge_parent_refs(repo_dir, merge_ref) do
+    with {:ok, base_sha} <- rev_parse(repo_dir, "#{merge_ref}^1"),
+         {:ok, head_sha} <- rev_parse(repo_dir, "#{merge_ref}^2") do
+      {:ok, base_sha, head_sha}
+    end
+  end
+
+  defp merge_base(repo_dir, left, right) do
+    case System.cmd("git", ["--git-dir", repo_dir, "merge-base", left, right],
+           stderr_to_stdout: true
+         ) do
+      {out, 0} ->
+        {:ok, out |> String.trim() |> String.downcase()}
+
+      {out, status} ->
+        {:error, "git merge-base failed with #{status}: #{String.slice(out, 0, 500)}"}
+    end
+  end
+
+  defp default_branch(repo_dir) do
+    case System.cmd("git", ["--git-dir", repo_dir, "ls-remote", "--symref", "origin", "HEAD"],
+           stderr_to_stdout: true
+         ) do
+      {out, 0} ->
+        case Regex.run(~r/ref:\s+refs\/heads\/(.+)\s+HEAD/, out) do
+          [_all, branch] -> {:ok, String.trim(branch)}
+          _ -> {:error, "could not determine origin HEAD"}
+        end
+
+      {out, status} ->
+        {:error, "git ls-remote origin HEAD failed with #{status}: #{String.slice(out, 0, 500)}"}
+    end
+  end
+
+  defp object_exists?(repo_dir, sha) do
+    case System.cmd("git", ["--git-dir", repo_dir, "cat-file", "-e", "#{sha}^{commit}"],
+           stderr_to_stdout: true
+         ) do
+      {_out, 0} -> true
+      {_out, _status} -> false
+    end
+  end
 
   defp git(args, error_prefix) do
     case System.cmd("git", args, stderr_to_stdout: true) do
@@ -405,7 +597,10 @@ defmodule Sugary.RepoMaterializer do
       version: @version,
       cases: length(records),
       planned: Enum.count(records, &(&1.status == "planned")),
-      metadata_resolved: Enum.count(records, &(&1.status == "metadata_resolved")),
+      metadata_resolved:
+        Enum.count(records, &(&1.status in ["metadata_resolved", "workspace_ready"])),
+      git_metadata_resolved: Enum.count(records, &(resolution_strategy(&1) in git_strategies())),
+      api_metadata_resolved: Enum.count(records, &(resolution_strategy(&1) == "github_api")),
       workspace_ready: Enum.count(records, &(&1.status == "workspace_ready")),
       unsupported: Enum.count(records, &(&1.status == "unsupported")),
       failed: Enum.count(records, &(&1.status in ["metadata_failed", "fetch_failed"])),
@@ -421,13 +616,20 @@ defmodule Sugary.RepoMaterializer do
     }
   end
 
+  defp resolution_strategy(record) do
+    record |> Map.get(:refs, %{}) |> field(:resolution_strategy)
+  end
+
+  defp git_strategies, do: ["git_pull_merge", "git_merge_base", "git_commit_parent"]
+
   defp render_report(config, summary, records) do
     rows =
       records
       |> Enum.map(fn record ->
         target = record.target || %{}
+        strategy = record |> Map.get(:refs, %{}) |> field(:resolution_strategy, "")
 
-        "| `#{record.case_id}` | #{Map.get(target, :repo_full_name, "n/a")} | #{Map.get(target, :type, "n/a")} | #{record.status} | #{record.diff_parity} | #{record.changed_files_count} | #{record.reason || ""} |"
+        "| `#{record.case_id}` | #{Map.get(target, :repo_full_name, "n/a")} | #{Map.get(target, :type, "n/a")} | #{record.status} | #{strategy} | #{record.diff_parity} | #{record.changed_files_count} | #{record.reason || ""} |"
       end)
       |> Enum.join("\n")
 
@@ -450,6 +652,8 @@ defmodule Sugary.RepoMaterializer do
     - Cases: #{summary.cases}
     - Planned: #{summary.planned}
     - Metadata resolved: #{summary.metadata_resolved}
+    - Git metadata resolved: #{summary.git_metadata_resolved}
+    - API metadata resolved: #{summary.api_metadata_resolved}
     - Workspace ready: #{summary.workspace_ready}
     - Unsupported: #{summary.unsupported}
     - Failed: #{summary.failed}
@@ -460,13 +664,13 @@ defmodule Sugary.RepoMaterializer do
 
     ## Cases
 
-    | Case | Repo | Type | Status | Diff parity | Changed files | Reason |
-    | --- | --- | --- | --- | --- | ---: | --- |
-    #{if rows == "", do: "| none | n/a | n/a | unavailable | unavailable | 0 | no cases |", else: rows}
+    | Case | Repo | Type | Status | Strategy | Diff parity | Changed files | Reason |
+    | --- | --- | --- | --- | --- | --- | ---: | --- |
+    #{if rows == "", do: "| none | n/a | n/a | unavailable | n/a | unavailable | 0 | no cases |", else: rows}
 
     ## Interpretation
 
-    `plan` mode only verifies that benchmark records point at supported GitHub PRs or commits. `metadata` mode resolves exact base/head SHAs through the GitHub API. `fetch` mode attempts to create local read-only base/head workspaces and then checks diff parity.
+    `plan` mode only verifies that benchmark records point at supported GitHub PRs or commits. `metadata` mode resolves exact base/head SHAs from git refs first: pull-request merge refs when available, merge-base against the default branch otherwise, and commit parent refs for commit URLs. The GitHub API is only used as a fallback when git metadata resolution fails. `fetch` mode attempts to create local read-only base/head workspaces and then checks diff parity.
     """
   end
 
@@ -478,7 +682,18 @@ defmodule Sugary.RepoMaterializer do
   defp repo_cache_path(target),
     do: Path.join([@repo_cache, "github.com", target.owner, "#{target.repo}.git"])
 
-  defp clone_url(owner, repo), do: "https://github.com/#{owner}/#{repo}.git"
+  defp clone_url(owner, repo) do
+    case System.get_env("SUGARY_GITHUB_CLONE_URL_TEMPLATE") do
+      template when is_binary(template) and template != "" ->
+        template
+        |> String.replace("{owner}", owner)
+        |> String.replace("{repo}", repo)
+        |> String.replace("{owner_repo}", "#{owner}/#{repo}")
+
+      _ ->
+        "https://github.com/#{owner}/#{repo}.git"
+    end
+  end
 
   defp canonical_url(owner, repo, "pull", number),
     do: "https://github.com/#{owner}/#{repo}/pull/#{number}"
