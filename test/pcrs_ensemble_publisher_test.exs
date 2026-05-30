@@ -155,9 +155,15 @@ defmodule Sugary.PCRSEnsemblePublisherTest do
       assert File.exists?(Path.join(out_dir, "suppressed-true-positives.json"))
       assert File.exists?(Path.join(out_dir, "admitted-false-positives.json"))
       assert File.exists?(Path.join(out_dir, "calibration-by-policy.json"))
+      assert File.exists?(Path.join(out_dir, "marginal-precision-bands.json"))
       assert File.exists?(Path.join([out_dir, no_triad["id"], "claims", "#{case_id}.json"]))
       assert File.exists?(Path.join(out_dir, "candidate-details.jsonl"))
       assert File.read!(Path.join(out_dir, "report.md")) =~ "not an official Martian score"
+
+      assert Enum.any?(
+               policies,
+               &(&1["id"] == "qualified-f1-trust-plus-tail-team-xhigh-budget78")
+             )
     end)
   end
 

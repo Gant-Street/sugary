@@ -2,7 +2,7 @@ defmodule Sugary.PCRSEnsemblePublisher do
   @moduledoc false
 
   @root ".sugary/research/pcrs-ensemble-publisher"
-  @method_id "pcrs-ensemble-publisher-v0"
+  @method_id "pcrs-ensemble-publisher-v2"
   @baseline_policy %{id: "team-ev-max-2", max_published: 2, min_score: 1.4}
   @total_budget 52
   @expected_claims 137
@@ -12,22 +12,183 @@ defmodule Sugary.PCRSEnsemblePublisher do
   @default_baseline_run ".sugary/research/runs/20260530T072359Z-martian-autoresearch-v0"
   @default_candidate_run ".sugary/research/runs/20260530T032918Z-martian-autoresearch-50-v0-experiment"
 
-  @default_sources [
-    %{run: @default_baseline_run, method: "pcrs-codex-repo-low-strict", source: "strict-repeat"},
+  @core_sources [
+    %{
+      run: @default_baseline_run,
+      method: "pcrs-codex-repo-low-strict",
+      source: "strict-repeat",
+      pool: :core,
+      family: "pcrs_repo_strict",
+      source_prior: 0.66
+    },
     %{
       run: @default_candidate_run,
       method: "pcrs-codex-repo-low-strict",
-      source: "strict-gauntlet"
+      source: "strict-gauntlet",
+      pool: :core,
+      family: "pcrs_repo_strict",
+      source_prior: 0.66
     },
-    %{run: @default_candidate_run, method: "pcrs-codex-repo-low", source: "broad-repo"},
-    %{run: @default_candidate_run, method: "pcrs-codex-proof-low", source: "proof-diff"},
-    %{run: @default_candidate_run, method: "codex-gpt-5.5-repo-low", source: "repo-raw"},
+    %{
+      run: @default_candidate_run,
+      method: "pcrs-codex-repo-low",
+      source: "broad-repo",
+      pool: :core,
+      family: "pcrs_repo_broad",
+      source_prior: 0.56
+    },
+    %{
+      run: @default_candidate_run,
+      method: "pcrs-codex-proof-low",
+      source: "proof-diff",
+      pool: :core,
+      family: "pcrs_diff_proof",
+      source_prior: 0.56
+    },
+    %{
+      run: @default_candidate_run,
+      method: "codex-gpt-5.5-repo-low",
+      source: "repo-raw",
+      pool: :core,
+      family: "codex_repo_raw",
+      source_prior: 0.52
+    },
     %{
       run: @default_candidate_run,
       method: "martian-pcrs-repo-plus-codex-low",
-      source: "prior-team"
+      source: "prior-team",
+      pool: :core,
+      family: "pcrs_team",
+      source_prior: 0.54
     }
   ]
+
+  @tail_sources [
+    %{
+      run: ".sugary/research/runs/20260525T183827Z-public-martian-pcrs-transfer-v1",
+      method: "public-pcrs-static-codex-low-team",
+      source: "tail-transfer-team-a",
+      pool: :tail,
+      family: "static_codex_team",
+      source_prior: 0.56
+    },
+    %{
+      run: ".sugary/research/runs/20260526T013237Z-martian-materialized-dev18-pcrs-v1-experiment",
+      method: "pcrs-codex-repo-low",
+      source: "tail-materialized-pcrs-repo",
+      pool: :tail,
+      family: "materialized_pcrs_repo",
+      source_prior: 0.52
+    },
+    %{
+      run: ".sugary/research/runs/20260526T013237Z-martian-materialized-dev18-pcrs-v1-experiment",
+      method: "native-codex-repo-low",
+      source: "tail-materialized-native-repo",
+      pool: :tail,
+      family: "materialized_codex_repo",
+      source_prior: 0.46
+    },
+    %{
+      run:
+        ".sugary/research/runs/20260526T000628Z-martian-materialized-architecture-v1-experiment",
+      method: "pcrs-codex-proof-low",
+      source: "tail-architecture-proof",
+      pool: :tail,
+      family: "architecture_pcrs_proof",
+      source_prior: 0.52
+    },
+    %{
+      run: ".sugary/research/runs/20260525T215029Z-public-martian-ranking-fresh-v1",
+      method: "codex-gpt-5.5-xhigh",
+      source: "tail-xhigh-fresh",
+      pool: :tail,
+      family: "codex_xhigh",
+      source_prior: 0.55
+    },
+    %{
+      run:
+        ".sugary/research/runs/20260526T000628Z-martian-materialized-architecture-v1-experiment",
+      method: "native-codex-repo-low",
+      source: "tail-architecture-native-repo",
+      pool: :tail,
+      family: "architecture_codex_repo",
+      source_prior: 0.46
+    },
+    %{
+      run: ".sugary/research/runs/20260525T215029Z-public-martian-ranking-fresh-v1",
+      method: "public-pcrs-static-codex-low-team",
+      source: "tail-fresh-team",
+      pool: :tail,
+      family: "static_codex_team",
+      source_prior: 0.56
+    },
+    %{
+      run: ".sugary/research/runs/20260525T183827Z-public-martian-pcrs-transfer-v1",
+      method: "codex-gpt-5.5-xhigh",
+      source: "tail-xhigh-transfer-a",
+      pool: :tail,
+      family: "codex_xhigh",
+      source_prior: 0.55
+    },
+    %{
+      run: ".sugary/research/runs/20260529T045745Z-public-martian-pcrs-transfer-v1",
+      method: "codex-gpt-5.5-xhigh",
+      source: "tail-xhigh-transfer-b",
+      pool: :tail,
+      family: "codex_xhigh",
+      source_prior: 0.55
+    },
+    %{
+      run: ".sugary/research/runs/20260526T013237Z-martian-materialized-dev18-pcrs-v1-experiment",
+      method: "native-codex-diff-low",
+      source: "tail-materialized-native-diff",
+      pool: :tail,
+      family: "materialized_codex_diff",
+      source_prior: 0.46
+    },
+    %{
+      run: ".sugary/research/runs/20260526T013237Z-martian-materialized-dev18-pcrs-v1-experiment",
+      method: "pcrs-codex-proof-low",
+      source: "tail-materialized-proof",
+      pool: :tail,
+      family: "materialized_pcrs_proof",
+      source_prior: 0.52
+    },
+    %{
+      run: ".sugary/research/runs/20260529T045745Z-public-martian-pcrs-transfer-v1",
+      method: "codex-gpt-5.5-low",
+      source: "tail-transfer-diff-low-b",
+      pool: :tail,
+      family: "codex_diff_low",
+      source_prior: 0.48
+    },
+    %{
+      run: ".sugary/research/runs/20260529T044430Z-public-martian-pcrs-transfer-v1",
+      method: "public-pcrs-static-codex-low-team",
+      source: "tail-transfer-team-b",
+      pool: :tail,
+      family: "static_codex_team",
+      source_prior: 0.56
+    },
+    %{
+      run: ".sugary/research/runs/20260529T045745Z-public-martian-pcrs-transfer-v1",
+      method: "public-pcrs-static-codex-low-team",
+      source: "tail-transfer-team-c",
+      pool: :tail,
+      family: "static_codex_team",
+      source_prior: 0.56
+    },
+    %{
+      run: ".sugary/research/runs/20260525T183827Z-public-martian-pcrs-transfer-v1",
+      method: "pcrs-codex-proof-low",
+      source: "tail-transfer-proof-a",
+      pool: :tail,
+      family: "pcrs_diff_proof",
+      source_prior: 0.52
+    }
+  ]
+
+  @default_sources @core_sources ++ @tail_sources
 
   @policies [
     %{id: "posterior-budget-52-t55", threshold: 0.55, max_per_pr: 2, total_budget: @total_budget},
@@ -70,6 +231,7 @@ defmodule Sugary.PCRSEnsemblePublisher do
       id: "posterior-max1-plus-source5-qualified-triad-budget52",
       mode: "trust",
       budget_tier: 52,
+      pool_scope: :core,
       strategy: "max1_plus_second",
       threshold: 0.55,
       max_per_pr: 2,
@@ -79,6 +241,83 @@ defmodule Sugary.PCRSEnsemblePublisher do
       require_qualified_triad: true,
       hypothesis:
         "Admit three-source consensus only when it combines raw repo context, prior-team agreement, and a strict reviewer."
+    },
+    %{
+      id: "qualified-f1-tail-verification-budget80",
+      mode: "qualified_f1",
+      budget_tier: 80,
+      strategy: "max1_plus_second",
+      threshold: 0.58,
+      max_per_pr: 3,
+      total_budget: 80,
+      second_min_source_count: 1,
+      second_min_posterior: 0.58,
+      require_tail_verification: true,
+      hypothesis:
+        "Use historical tail candidate sources only when a claim has strong proof-shape features or independent source support."
+    },
+    %{
+      id: "qualified-f1-trust-plus-tail-team-xhigh-budget78",
+      mode: "qualified_f1",
+      budget_tier: 78,
+      strategy: "trust_plus_tail",
+      base_policy_id: @v0_policy_id,
+      threshold: 0.55,
+      max_per_pr: 3,
+      total_budget: 78,
+      supplemental_budget: 26,
+      max_supplemental_per_pr: 1,
+      supplemental_filter: "tail_team_or_xhigh",
+      near_duplicate_jaccard: 0.18,
+      require_tail_verification: true,
+      hypothesis:
+        "Preserve the trust/default set, then add at most one team-backed or xhigh tail claim per PR after near-duplicate suppression."
+    },
+    %{
+      id: "qualified-f1-trust-plus-tail-diverse-budget80",
+      mode: "qualified_f1",
+      budget_tier: 80,
+      strategy: "trust_plus_tail",
+      base_policy_id: @v0_policy_id,
+      threshold: 0.55,
+      max_per_pr: 3,
+      total_budget: 80,
+      supplemental_budget: 28,
+      max_supplemental_per_pr: 1,
+      supplemental_filter: "materialized_xhigh_team_source2",
+      near_duplicate_jaccard: 0.18,
+      require_tail_verification: true,
+      hypothesis:
+        "Wider qualified-F1 supplement using materialized, xhigh, or team-backed tail claims with source-count support."
+    },
+    %{
+      id: "qualified-f1-tail-verification-budget88",
+      mode: "qualified_f1",
+      budget_tier: 88,
+      strategy: "max1_plus_second",
+      threshold: 0.56,
+      max_per_pr: 3,
+      total_budget: 88,
+      second_min_source_count: 1,
+      second_min_posterior: 0.56,
+      require_tail_verification: true,
+      hypothesis:
+        "Slightly wider qualified-F1 frontier for testing whether tail verification can buy recall without crossing the 0.70 precision floor."
+    },
+    %{
+      id: "raw-f1-tail-diagnostic-budget110",
+      mode: "raw_f1_diagnostic",
+      budget_tier: 110,
+      strategy: "max1_plus_second",
+      threshold: 0.48,
+      max_per_pr: 4,
+      total_budget: 110,
+      second_min_source_count: 1,
+      second_min_posterior: 0.48,
+      eligible_for_promotion: false,
+      diagnostic: true,
+      hypothesis:
+        "Raw recall diagnostic. This can expose publisher ceiling but is not eligible for promotion or product default."
     },
     %{
       id: "frontier-balanced-budget62-source2-qualified-triad",
@@ -188,7 +427,8 @@ defmodule Sugary.PCRSEnsemblePublisher do
     suppressed_true_positives = suppressed_true_positive_report(policy_reports)
     admitted_false_positives = admitted_false_positive_report(policy_reports)
     calibration = calibration_report(case_pools, winner)
-    decision = decision(winner, baseline, pool_report, leave_repo_out)
+    marginal_precision_bands = marginal_precision_bands(policy_reports)
+    decision = decision(policy_reports, winner, baseline, pool_report, leave_repo_out)
 
     write_artifacts!(
       out_dir,
@@ -210,6 +450,7 @@ defmodule Sugary.PCRSEnsemblePublisher do
         suppressed_true_positives: suppressed_true_positives,
         admitted_false_positives: admitted_false_positives,
         calibration: calibration,
+        marginal_precision_bands: marginal_precision_bands,
         decision: decision
       }
     )
@@ -309,7 +550,18 @@ defmodule Sugary.PCRSEnsemblePublisher do
     |> Map.put(:source_run, source.run)
     |> Map.put(:source_method, source.method)
     |> Map.put(:source_id, source.source)
-    |> Map.put(:source, Map.merge(existing_source, %{ensemble_source_id: source.source}))
+    |> Map.put(:source_pool, Map.get(source, :pool, :core))
+    |> Map.put(:source_family, Map.get(source, :family, source.source))
+    |> Map.put(:source_prior, Map.get(source, :source_prior, 0.5))
+    |> Map.put(
+      :source,
+      Map.merge(existing_source, %{
+        ensemble_source_id: source.source,
+        ensemble_pool: Map.get(source, :pool, :core),
+        ensemble_family: Map.get(source, :family, source.source),
+        ensemble_source_prior: Map.get(source, :source_prior, 0.5)
+      })
+    )
     |> Map.put(:publish_decision, "suppress")
   end
 
@@ -341,6 +593,11 @@ defmodule Sugary.PCRSEnsemblePublisher do
     source_ids = claims |> Enum.map(&field(&1, :source_id)) |> Enum.uniq() |> Enum.sort()
     source_methods = claims |> Enum.map(&field(&1, :source_method)) |> Enum.uniq() |> Enum.sort()
 
+    source_pools =
+      claims |> Enum.map(&field(&1, :source_pool, :core)) |> Enum.uniq() |> Enum.sort()
+
+    source_families = claims |> Enum.map(&field(&1, :source_family)) |> Enum.uniq() |> Enum.sort()
+
     evidence =
       claims |> Enum.flat_map(&(field(&1, :evidence, []) |> List.wrap())) |> uniq_by_summary()
 
@@ -354,6 +611,8 @@ defmodule Sugary.PCRSEnsemblePublisher do
         agreement_count: length(source_ids),
         ensemble_source_ids: source_ids,
         ensemble_source_methods: source_methods,
+        ensemble_source_pools: source_pools,
+        ensemble_source_families: source_families,
         merged_claim_count: length(claims)
       })
 
@@ -365,6 +624,8 @@ defmodule Sugary.PCRSEnsemblePublisher do
     |> Map.put(:source, merged_source)
     |> Map.put(:source_ids, source_ids)
     |> Map.put(:source_methods, source_methods)
+    |> Map.put(:source_pools, source_pools)
+    |> Map.put(:source_families, source_families)
     |> Map.put(:merged_claims, Enum.map(claims, &field(&1, :id)))
     |> Map.put(:features, features(representative, claims, bench_case, source_ids))
   end
@@ -391,21 +652,44 @@ defmodule Sugary.PCRSEnsemblePublisher do
       claims |> Enum.map(&(field(&1, :category, "") |> to_string() |> String.downcase()))
 
     path = field(representative, :path)
+    source_pools = claims |> Enum.map(&field(&1, :source_pool, :core))
+    source_families = claims |> Enum.map(&field(&1, :source_family)) |> Enum.uniq()
+    source_priors = claims |> Enum.map(&(field(&1, :source_prior, 0.5) || 0.5))
+    core_source_count = Enum.count(source_pools, &(&1 == :core or &1 == "core"))
+    tail_source_count = Enum.count(source_pools, &(&1 == :tail or &1 == "tail"))
 
-    %{
+    base = %{
       max_confidence:
         Enum.map(claims, &(field(&1, :confidence, 0.0) || 0.0)) |> Enum.max(fn -> 0.0 end),
+      source_prior:
+        if(source_priors == [],
+          do: 0.5,
+          else: Enum.sum(source_priors) / max(length(source_priors), 1)
+        ),
+      max_source_prior: Enum.max(source_priors, fn -> 0.5 end),
       severity_weight:
         claims |> Enum.map(&(field(&1, :severity) |> severity_weight())) |> Enum.max(fn -> 1 end),
       strongest_evidence_tier:
         evidence |> Enum.map(&(field(&1, :tier, 5) || 5)) |> Enum.min(fn -> 5 end),
       evidence_count: length(evidence),
       source_count: length(source_ids),
+      source_family_count: length(source_families),
+      core_source_count: core_source_count,
+      tail_source_count: tail_source_count,
+      tail_only: tail_source_count > 0 and core_source_count == 0,
+      has_tail: tail_source_count > 0,
       has_strict: Enum.any?(source_ids, &String.contains?(&1, "strict")),
       has_broad_repo: "broad-repo" in source_ids,
       has_proof_diff: "proof-diff" in source_ids,
       has_prior_team: "prior-team" in source_ids,
       has_repo_raw: "repo-raw" in source_ids,
+      has_xhigh: Enum.any?(source_ids, &String.contains?(&1, "xhigh")),
+      has_materialized: Enum.any?(source_ids, &String.contains?(&1, "materialized")),
+      has_tail_team:
+        Enum.any?(
+          source_ids,
+          &(String.contains?(&1, "tail-transfer-team") or &1 == "tail-fresh-team")
+        ),
       path_known: normalize_path(path) not in ["", "unknown"],
       line_known: not is_nil(field(representative, :start_line) || field(representative, :line)),
       changed_file_support: changed_file_support?(bench_case, path),
@@ -421,6 +705,17 @@ defmodule Sugary.PCRSEnsemblePublisher do
         ),
       weak_or_missing_evidence: evidence == [] or Enum.all?(evidence, &(field(&1, :tier, 5) >= 5))
     }
+
+    Map.put(base, :tail_verified, tail_verified?(base))
+  end
+
+  defp tail_verified?(features) do
+    not features.tail_only or
+      features.source_count >= 2 or
+      (features.max_confidence >= 0.82 and features.path_known and features.changed_file_support and
+         features.has_failure_path and not features.weak_or_missing_evidence and
+         (features.risk_category or features.has_suggested_test or features.has_xhigh or
+            features.has_tail_team))
   end
 
   defp add_labels(bench_case, candidate) do
@@ -434,17 +729,26 @@ defmodule Sugary.PCRSEnsemblePublisher do
   end
 
   defp add_posterior(candidate) do
-    raw = raw_posterior_score(candidate.features)
-    posterior = 1.0 / (1.0 + :math.exp(-5.0 * (raw - 0.62)))
-    candidate |> Map.put(:raw_posterior_score, raw) |> Map.put(:posterior, posterior)
+    legacy_raw = legacy_posterior_score(candidate.features)
+    legacy_posterior = 1.0 / (1.0 + :math.exp(-5.0 * (legacy_raw - 0.62)))
+    tail_raw = tail_posterior_score(candidate.features)
+    tail_posterior = 1.0 / (1.0 + :math.exp(-5.0 * (tail_raw - 0.62)))
+
+    candidate
+    |> Map.put(:legacy_raw_posterior_score, legacy_raw)
+    |> Map.put(:legacy_posterior, legacy_posterior)
+    |> Map.put(:raw_posterior_score, tail_raw)
+    |> Map.put(:posterior, tail_posterior)
   end
 
-  defp raw_posterior_score(f) do
+  defp legacy_posterior_score(f) do
+    source_count = if f.core_source_count > 0, do: f.core_source_count, else: f.source_count
+
     0.0
     |> Kernel.+(0.30 * clamp(f.max_confidence))
     |> Kernel.+(0.10 * normalize(f.severity_weight, 4))
     |> Kernel.+(0.12 * evidence_score(f.strongest_evidence_tier))
-    |> Kernel.+(0.16 * normalize(min(f.source_count, 4), 4))
+    |> Kernel.+(0.16 * normalize(min(source_count, 4), 4))
     |> Kernel.+(if(f.has_strict, do: 0.11, else: 0.0))
     |> Kernel.+(if(f.has_broad_repo, do: 0.07, else: 0.0))
     |> Kernel.+(if(f.has_proof_diff, do: 0.05, else: 0.0))
@@ -458,6 +762,34 @@ defmodule Sugary.PCRSEnsemblePublisher do
     |> Kernel.+(if(f.introduced_by_pr, do: 0.02, else: -0.18))
     |> Kernel.-(if(f.low_style, do: 0.08, else: 0.0))
     |> Kernel.-(if(f.weak_or_missing_evidence, do: 0.10, else: 0.0))
+    |> clamp()
+  end
+
+  defp tail_posterior_score(f) do
+    0.0
+    |> Kernel.+(0.30 * clamp(f.max_confidence))
+    |> Kernel.+(0.10 * clamp(f.source_prior))
+    |> Kernel.+(0.10 * normalize(f.severity_weight, 4))
+    |> Kernel.+(0.12 * evidence_score(f.strongest_evidence_tier))
+    |> Kernel.+(0.12 * normalize(min(f.source_count, 4), 4))
+    |> Kernel.+(0.05 * normalize(min(f.source_family_count, 3), 3))
+    |> Kernel.+(if(f.has_strict, do: 0.11, else: 0.0))
+    |> Kernel.+(if(f.has_broad_repo, do: 0.07, else: 0.0))
+    |> Kernel.+(if(f.has_proof_diff, do: 0.05, else: 0.0))
+    |> Kernel.+(if(f.has_prior_team, do: 0.04, else: 0.0))
+    |> Kernel.+(if(f.has_xhigh, do: 0.04, else: 0.0))
+    |> Kernel.+(if(f.has_materialized, do: 0.03, else: 0.0))
+    |> Kernel.+(if(f.path_known, do: 0.06, else: -0.04))
+    |> Kernel.+(if(f.line_known, do: 0.04, else: 0.0))
+    |> Kernel.+(if(f.changed_file_support, do: 0.05, else: -0.02))
+    |> Kernel.+(if(f.has_failure_path, do: 0.06, else: -0.02))
+    |> Kernel.+(if(f.has_suggested_test, do: 0.03, else: 0.0))
+    |> Kernel.+(if(f.risk_category, do: 0.04, else: 0.0))
+    |> Kernel.+(if(f.introduced_by_pr, do: 0.02, else: -0.18))
+    |> Kernel.+(if(f.tail_verified, do: 0.04, else: -0.18))
+    |> Kernel.-(if(f.low_style, do: 0.08, else: 0.0))
+    |> Kernel.-(if(f.weak_or_missing_evidence, do: 0.10, else: 0.0))
+    |> Kernel.-(if(f.tail_only and f.max_source_prior < 0.50, do: 0.05, else: 0.0))
     |> clamp()
   end
 
@@ -505,6 +837,11 @@ defmodule Sugary.PCRSEnsemblePublisher do
     candidates
     |> policy_case_candidates(policy)
     |> Enum.map(fn claim ->
+      claim =
+        claim
+        |> Map.put(:posterior, policy_posterior(claim, policy))
+        |> Map.put(:raw_posterior_score, policy_raw_posterior_score(claim, policy))
+
       if MapSet.member?(selected, claim.id) do
         Map.put(claim, :publish_decision, "publish")
       else
@@ -516,22 +853,94 @@ defmodule Sugary.PCRSEnsemblePublisher do
   end
 
   defp selected_candidate_ids(case_pools, policy) do
+    if Map.get(policy, :strategy) == "trust_plus_tail" do
+      trust_plus_tail_selected_candidate_ids(case_pools, policy)
+    else
+      posterior_selected_candidate_ids(case_pools, policy)
+    end
+  end
+
+  defp posterior_selected_candidate_ids(case_pools, policy) do
     case_pools
     |> Enum.flat_map(fn case_pool ->
       policy_case_candidates(case_pool.candidates, policy)
     end)
-    |> Enum.filter(&(&1.posterior >= policy.threshold))
-    |> Enum.sort_by(& &1.posterior, :desc)
+    |> Enum.filter(&(policy_posterior(&1, policy) >= policy.threshold))
+    |> Enum.sort_by(&policy_posterior(&1, policy), :desc)
     |> Enum.take(policy.total_budget)
     |> Enum.map(& &1.id)
     |> MapSet.new()
+  end
+
+  defp trust_plus_tail_selected_candidate_ids(case_pools, policy) do
+    base_policy = base_policy!(policy)
+    base_selected = posterior_selected_candidate_ids(case_pools, base_policy)
+
+    base_claims =
+      case_pools
+      |> Enum.flat_map(fn case_pool ->
+        case_pool.candidates
+        |> policy_case_candidates(base_policy)
+        |> Enum.filter(&MapSet.member?(base_selected, &1.id))
+        |> Enum.map(&Map.put(&1, :case_id, case_pool.case.id))
+      end)
+
+    supplemental_budget =
+      Map.get(policy, :supplemental_budget, policy.total_budget - MapSet.size(base_selected))
+
+    max_supplemental_per_pr = Map.get(policy, :max_supplemental_per_pr, 1)
+
+    supplemental_candidates =
+      case_pools
+      |> Enum.flat_map(fn case_pool ->
+        case_pool.candidates
+        |> Enum.reject(&MapSet.member?(base_selected, &1.id))
+        |> Enum.filter(&supplemental_allowed?(&1, policy))
+        |> Enum.map(&Map.put(&1, :case_id, case_pool.case.id))
+      end)
+      |> Enum.sort_by(&supplemental_score(&1, policy), :desc)
+
+    {supplemental, _counts} =
+      Enum.reduce(supplemental_candidates, {[], %{}}, fn candidate, {selected, counts} ->
+        case_id = candidate.case_id
+        already_selected = base_claims ++ selected
+
+        cond do
+          length(selected) >= supplemental_budget ->
+            {selected, counts}
+
+          Map.get(counts, case_id, 0) >= max_supplemental_per_pr ->
+            {selected, counts}
+
+          near_duplicate?(
+            candidate,
+            already_selected,
+            Map.get(policy, :near_duplicate_jaccard, 0.18)
+          ) ->
+            {selected, counts}
+
+          true ->
+            {[candidate | selected], Map.update(counts, case_id, 1, &(&1 + 1))}
+        end
+      end)
+
+    (Enum.map(base_claims, & &1.id) ++ Enum.map(supplemental, & &1.id))
+    |> Enum.take(policy.total_budget)
+    |> MapSet.new()
+  end
+
+  defp base_policy!(policy) do
+    base_id = Map.fetch!(policy, :base_policy_id)
+
+    Enum.find(@policies, &(&1.id == base_id)) ||
+      raise ArgumentError, "unknown base PCRS policy #{inspect(base_id)}"
   end
 
   defp policy_case_candidates(candidates, %{strategy: "max1_plus_second"} = policy) do
     sorted =
       candidates
       |> Enum.filter(&allowed_by_policy?(&1, policy))
-      |> Enum.sort_by(& &1.posterior, :desc)
+      |> Enum.sort_by(&policy_posterior(&1, policy), :desc)
 
     first = Enum.take(sorted, 1)
 
@@ -539,61 +948,154 @@ defmodule Sugary.PCRSEnsemblePublisher do
       sorted
       |> Enum.drop(1)
       |> Enum.filter(fn candidate ->
-        candidate.posterior >= Map.get(policy, :second_min_posterior, 0.0) and
-          candidate.features.source_count >= Map.get(policy, :second_min_source_count, 1)
+        policy_posterior(candidate, policy) >= Map.get(policy, :second_min_posterior, 0.0) and
+          policy_source_count(candidate, policy) >= Map.get(policy, :second_min_source_count, 1)
       end)
       |> Enum.take(max(policy.max_per_pr - 1, 0))
 
     first ++ second
   end
 
+  defp policy_case_candidates(candidates, %{strategy: "trust_plus_tail"} = policy) do
+    base_policy = base_policy!(policy)
+
+    candidates
+    |> Enum.filter(&(allowed_by_policy?(&1, base_policy) or supplemental_allowed?(&1, policy)))
+    |> Enum.sort_by(&supplemental_score(&1, policy), :desc)
+  end
+
   defp policy_case_candidates(candidates, policy) do
     candidates
     |> Enum.filter(&allowed_by_policy?(&1, policy))
-    |> Enum.sort_by(& &1.posterior, :desc)
+    |> Enum.sort_by(&policy_posterior(&1, policy), :desc)
     |> Enum.take(policy.max_per_pr)
   end
 
+  defp policy_posterior(candidate, policy) do
+    if policy_ranker(policy) == :legacy do
+      candidate.legacy_posterior
+    else
+      candidate.posterior
+    end
+  end
+
+  defp policy_raw_posterior_score(candidate, policy) do
+    if policy_ranker(policy) == :legacy do
+      candidate.legacy_raw_posterior_score
+    else
+      candidate.raw_posterior_score
+    end
+  end
+
+  defp policy_ranker(policy) do
+    case Map.get(policy, :ranker) do
+      nil ->
+        if Map.get(policy, :mode) in ["qualified_f1", "raw_f1_diagnostic"],
+          do: :tail,
+          else: :legacy
+
+      value ->
+        value
+    end
+  end
+
   defp allowed_by_policy?(candidate, policy) do
-    source_count = candidate.features.source_count
+    source_count = policy_source_count(candidate, policy)
 
     source_count not in Map.get(policy, :exclude_source_counts, []) and
+      pool_allowed?(candidate, policy) and
+      tail_allowed?(candidate, policy) and
       qualified_triad?(candidate, policy)
   end
 
-  defp qualified_triad?(candidate, %{require_qualified_triad: true}) do
-    candidate.features.source_count != 3 or
+  defp pool_allowed?(candidate, %{pool_scope: :core}) do
+    candidate.features.core_source_count > 0
+  end
+
+  defp pool_allowed?(_candidate, _policy), do: true
+
+  defp tail_allowed?(candidate, %{require_tail_verification: true}) do
+    not candidate.features.tail_only or candidate.features.tail_verified
+  end
+
+  defp tail_allowed?(_candidate, _policy), do: true
+
+  defp supplemental_allowed?(candidate, policy) do
+    candidate.features.tail_verified and
+      supplemental_filter_allowed?(
+        candidate.features,
+        Map.get(policy, :supplemental_filter, "tail_team")
+      )
+  end
+
+  defp supplemental_filter_allowed?(features, "tail_team"), do: features.has_tail_team
+
+  defp supplemental_filter_allowed?(features, "tail_team_or_xhigh"),
+    do: features.has_tail_team or features.has_xhigh
+
+  defp supplemental_filter_allowed?(features, "materialized_xhigh_team_source2") do
+    (features.has_materialized or features.has_xhigh or features.has_tail_team) and
+      features.source_count >= 2
+  end
+
+  defp supplemental_filter_allowed?(features, "source3_tail"),
+    do: features.has_tail and features.source_count >= 3
+
+  defp supplemental_filter_allowed?(_features, _filter), do: false
+
+  defp supplemental_score(candidate, _policy) do
+    f = candidate.features
+
+    candidate.posterior +
+      if_score(f.has_xhigh, 0.18) +
+      if_score(f.has_tail_team, 0.10) +
+      if_score(f.has_materialized, 0.07) +
+      0.04 * min(f.source_count, 4) -
+      if_score(f.tail_only, 0.03)
+  end
+
+  defp if_score(true, value), do: value
+  defp if_score(_value, _score), do: 0.0
+
+  defp near_duplicate?(candidate, selected_claims, threshold) do
+    Enum.any?(selected_claims, fn selected ->
+      field(selected, :case_id) == field(candidate, :case_id) and
+        (token_jaccard(field(selected, :claim), field(candidate, :claim)) >= threshold or
+           (normalize_path(field(selected, :path)) == normalize_path(field(candidate, :path)) and
+              field(selected, :category) == field(candidate, :category) and
+              token_jaccard(field(selected, :claim), field(candidate, :claim)) >= threshold / 2))
+    end)
+  end
+
+  defp qualified_triad?(candidate, %{require_qualified_triad: true} = policy) do
+    policy_source_count(candidate, policy) != 3 or
       (candidate.features.has_repo_raw and candidate.features.has_prior_team and
          candidate.features.has_strict)
   end
 
   defp qualified_triad?(_candidate, _policy), do: true
 
-  defp choose_winner(policy_reports, baseline) do
-    eligible =
-      Enum.filter(policy_reports, fn report ->
-        Map.get(report.policy, :eligible_for_promotion, true)
-      end)
-
-    reports = if eligible == [], do: policy_reports, else: eligible
-
-    reports
-    |> Enum.max_by(fn report ->
-      score = report.score
-
-      {
-        gates_score(report, baseline),
-        uaf1(score),
-        score.f1,
-        score.hits,
-        -score.noise
-      }
-    end)
+  defp policy_source_count(candidate, %{pool_scope: :core}) do
+    candidate.features.core_source_count
   end
 
-  defp gates_score(report, baseline) do
-    checks = promotion_checks(report, baseline, %{oracle_recall: 1.0}, %{repo_groups_passing: 5})
-    Enum.count(checks, fn {_key, value} -> value == true end)
+  defp policy_source_count(candidate, _policy), do: candidate.features.source_count
+
+  defp choose_winner(policy_reports, _baseline) do
+    qualified = best_qualified_f1(policy_reports)
+    v0 = Enum.find(policy_reports, &(&1.id == @v0_policy_id))
+    product_default = best_product_default(policy_reports, v0)
+
+    cond do
+      qualified != nil and qualified.score.f1 >= 0.520 and qualified.score.precision >= 0.70 ->
+        qualified
+
+      product_default != nil ->
+        product_default
+
+      true ->
+        Enum.max_by(policy_reports, &{uaf1(&1.score), &1.score.f1, -&1.score.noise}, fn -> nil end)
+    end
   end
 
   defp candidate_pool_report(case_pools) do
@@ -617,7 +1119,10 @@ defmodule Sugary.PCRSEnsemblePublisher do
           expected: Sugary.ClaimMatcher.expected_ids(case_pool.case) |> MapSet.size(),
           pool_hits: MapSet.size(ids),
           raw_claims: length(case_pool.raw_claims),
-          merged_candidates: length(case_pool.candidates)
+          merged_candidates: length(case_pool.candidates),
+          tail_candidates: Enum.count(case_pool.candidates, & &1.features.has_tail),
+          tail_only_candidates: Enum.count(case_pool.candidates, & &1.features.tail_only),
+          tail_verified_candidates: Enum.count(case_pool.candidates, & &1.features.tail_verified)
         }
       end)
 
@@ -629,6 +1134,18 @@ defmodule Sugary.PCRSEnsemblePublisher do
       oracle_recall: ratio(pool_hits, expected_total),
       raw_claims: Enum.sum(Enum.map(case_pools, &length(&1.raw_claims))),
       merged_candidates: Enum.sum(Enum.map(case_pools, &length(&1.candidates))),
+      tail_candidates:
+        case_pools
+        |> Enum.flat_map(& &1.candidates)
+        |> Enum.count(& &1.features.has_tail),
+      tail_only_candidates:
+        case_pools
+        |> Enum.flat_map(& &1.candidates)
+        |> Enum.count(& &1.features.tail_only),
+      tail_verified_candidates:
+        case_pools
+        |> Enum.flat_map(& &1.candidates)
+        |> Enum.count(& &1.features.tail_verified),
       per_case: hits_by_case
     }
   end
@@ -852,6 +1369,14 @@ defmodule Sugary.PCRSEnsemblePublisher do
     |> Enum.max_by(&{&1.score.f1, uaf1(&1.score), &1.score.hits, -&1.score.noise}, fn -> nil end)
   end
 
+  defp best_qualified_f1(policy_reports) do
+    policy_reports
+    |> Enum.reject(&diagnostic?/1)
+    |> Enum.filter(&(Map.get(&1.policy, :mode) == "qualified_f1"))
+    |> Enum.filter(&(&1.score.precision >= 0.70))
+    |> Enum.max_by(&{&1.score.f1, &1.score.hits, uaf1(&1.score), -&1.score.noise}, fn -> nil end)
+  end
+
   defp best_f1(policy_reports) do
     policy_reports
     |> Enum.reject(&diagnostic?/1)
@@ -1011,6 +1536,39 @@ defmodule Sugary.PCRSEnsemblePublisher do
     end)
   end
 
+  defp marginal_precision_bands(policy_reports) do
+    Map.new(policy_reports, fn report ->
+      bands =
+        report.results
+        |> Enum.flat_map(fn result ->
+          result.final_claims
+          |> Enum.filter(&(&1.publish_decision == "publish"))
+          |> Enum.map(&Map.put(&1, :case_id, result.case.id))
+        end)
+        |> Enum.sort_by(& &1.posterior, :desc)
+        |> Enum.chunk_every(10)
+        |> Enum.with_index(1)
+        |> Enum.map(fn {claims, index} ->
+          tp = Enum.count(claims, & &1.is_true_positive)
+          fp = length(claims) - tp
+
+          %{
+            band: index,
+            start_rank: (index - 1) * 10 + 1,
+            end_rank: (index - 1) * 10 + length(claims),
+            claims: length(claims),
+            hits: tp,
+            noise: fp,
+            marginal_precision: ratio(tp, length(claims)),
+            min_posterior: claims |> Enum.map(& &1.posterior) |> Enum.min(fn -> 0.0 end),
+            max_posterior: claims |> Enum.map(& &1.posterior) |> Enum.max(fn -> 0.0 end)
+          }
+        end)
+
+      {report.id, bands}
+    end)
+  end
+
   defp diagnostic_claim_row(bench_case, claim) do
     %{
       case_id: bench_case.id,
@@ -1021,8 +1579,49 @@ defmodule Sugary.PCRSEnsemblePublisher do
       claim: claim.claim,
       posterior: claim.posterior,
       source_ids: claim.source_ids,
+      source_pools: claim.source_pools,
+      source_families: claim.source_families,
+      classification: diagnostic_classification(claim),
       features: claim.features
     }
+  end
+
+  defp diagnostic_classification(%{is_true_positive: true} = claim) do
+    cond do
+      claim.features.tail_only and not claim.features.tail_verified ->
+        "suppressed_tp_unverified_tail"
+
+      claim.features.source_count == 1 ->
+        "suppressed_tp_single_source"
+
+      claim.posterior < 0.58 ->
+        "suppressed_tp_low_posterior"
+
+      true ->
+        "suppressed_tp_budget_or_per_pr_limit"
+    end
+  end
+
+  defp diagnostic_classification(claim) do
+    cond do
+      claim.features.tail_only and not claim.features.tail_verified ->
+        "admitted_fp_unverified_tail"
+
+      claim.features.low_style ->
+        "admitted_fp_style_or_low_severity"
+
+      not claim.features.changed_file_support ->
+        "admitted_fp_no_changed_file_support"
+
+      claim.features.weak_or_missing_evidence ->
+        "admitted_fp_weak_evidence"
+
+      claim.features.source_count == 1 ->
+        "admitted_fp_single_source"
+
+      true ->
+        "admitted_fp_calibration_error"
+    end
   end
 
   defp aggregate_case_rows(rows) do
@@ -1055,38 +1654,53 @@ defmodule Sugary.PCRSEnsemblePublisher do
     |> Map.put(:avg_comments_per_pr, ratio(totals.published_claims, totals.cases))
   end
 
-  defp decision(winner, baseline, pool_report, leave_repo_out) do
-    checks = promotion_checks(winner, baseline, pool_report, leave_repo_out)
+  defp decision(policy_reports, winner, _baseline, pool_report, leave_repo_out) do
+    trust = Enum.find(policy_reports, &(&1.id == @v0_policy_id))
+    qualified = best_qualified_f1(policy_reports)
+    raw = best_raw_f1(policy_reports)
+    checks = promotion_checks(trust, qualified, pool_report, leave_repo_out)
     passed = Enum.all?(Map.values(checks))
 
     %{
       decision: if(passed, do: "promote", else: "reject"),
       winner: winner && winner.id,
+      trust_default: trust && trust.id,
+      qualified_f1: qualified && qualified.id,
+      raw_f1_diagnostic: raw && raw.id,
       checks: checks,
       reason:
         if(passed,
-          do: "PCRS Ensemble Publisher frontier cleared the no-key local proxy gates.",
-          else: "PCRS Ensemble Publisher frontier did not clear all no-key local proxy gates."
+          do: "PCRS Ensemble Publisher v2 cleared the no-key local proxy gates.",
+          else: "PCRS Ensemble Publisher v2 did not clear all no-key local proxy gates."
         )
     }
   end
 
-  defp promotion_checks(nil, _baseline, _pool_report, _leave_repo_out),
-    do: %{winner_exists: false}
+  defp best_raw_f1(policy_reports) do
+    policy_reports
+    |> Enum.filter(&(Map.get(&1.policy, :mode) == "raw_f1_diagnostic"))
+    |> Enum.max_by(&{&1.score.f1, &1.score.hits, -&1.score.noise}, fn -> nil end)
+  end
 
-  defp promotion_checks(winner, baseline, pool_report, leave_repo_out) do
-    score = winner.score
+  defp promotion_checks(nil, _qualified, _pool_report, _leave_repo_out),
+    do: %{trust_default_exists: false}
+
+  defp promotion_checks(_trust, nil, _pool_report, _leave_repo_out),
+    do: %{qualified_f1_exists: false}
+
+  defp promotion_checks(trust, qualified, pool_report, leave_repo_out) do
+    trust_score = trust.score
+    qualified_score = qualified.score
 
     %{
-      f1: score.f1 >= 0.430,
-      uaf1: uaf1(score) >= 0.300,
-      hits: score.hits >= 41,
-      noise: score.noise <= 11,
-      avg_comments_per_pr: score.avg_comments_per_pr <= 1.05,
-      candidate_pool_oracle_recall: pool_report.oracle_recall >= 0.45,
-      recall_at_budget:
-        winner.recall_at_budget.hits >= baseline.score.hits and
-          winner.recall_at_budget.recall >= baseline.score.recall,
+      trust_default_f1: trust_score.f1 >= 0.444,
+      trust_default_precision: trust_score.precision >= 0.800,
+      qualified_f1: qualified_score.f1 >= 0.520,
+      qualified_precision: qualified_score.precision >= 0.700,
+      qualified_hits: qualified_score.hits >= 56,
+      candidate_pool_oracle_recall: pool_report.oracle_recall >= 0.570,
+      no_duplicate_or_near_duplicate_inflation:
+        pool_report.merged_candidates <= pool_report.raw_claims,
       leave_repo_out: leave_repo_out.repo_groups_passing >= 4,
       not_official_score: true
     }
@@ -1143,6 +1757,12 @@ defmodule Sugary.PCRSEnsemblePublisher do
     )
 
     Sugary.Json.write!(Path.join(out_dir, "calibration.json"), data.calibration)
+
+    Sugary.Json.write!(
+      Path.join(out_dir, "marginal-precision-bands.json"),
+      data.marginal_precision_bands
+    )
+
     Sugary.Json.write!(Path.join(out_dir, "decision.json"), data.decision)
     write_policy_claims!(out_dir, data.policies)
 
@@ -1180,7 +1800,10 @@ defmodule Sugary.PCRSEnsemblePublisher do
               published_by_best_uaf1_policy: MapSet.member?(published_ids, claim.id),
               features: claim.features,
               source_ids: claim.source_ids,
-              source_methods: claim.source_methods
+              source_methods: claim.source_methods,
+              source_pools: claim.source_pools,
+              source_families: claim.source_families,
+              classification: diagnostic_classification(claim)
             }
           end)
         end)
@@ -1266,6 +1889,23 @@ defmodule Sugary.PCRSEnsemblePublisher do
       end)
       |> Enum.join("\n")
 
+    band_rows =
+      [
+        data.frontier.product_default,
+        data.frontier.leaderboard_candidate,
+        data.frontier.best_f1_policy
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq_by(& &1.id)
+      |> Enum.flat_map(fn summary ->
+        data.marginal_precision_bands
+        |> Map.get(summary.id, [])
+        |> Enum.map(fn band ->
+          "| #{summary.id} | #{band.band} | #{band.start_rank}-#{band.end_rank} | #{band.claims} | #{band.hits} | #{band.noise} | #{fmt(band.marginal_precision)} | #{fmt(band.min_posterior)} | #{fmt(band.max_posterior)} |"
+        end)
+      end)
+      |> Enum.join("\n")
+
     checks =
       data.decision.checks
       |> Enum.map(fn {key, value} -> "- #{key}: #{value}" end)
@@ -1291,6 +1931,9 @@ defmodule Sugary.PCRSEnsemblePublisher do
     - Merged candidates: #{data.pool_report.merged_candidates}
     - Candidate-pool oracle recall: #{fmt(data.pool_report.oracle_recall)}
     - Pool hits: #{data.pool_report.pool_hits}/#{data.pool_report.expected_claims}
+    - Tail candidates: #{data.pool_report.tail_candidates}
+    - Tail-only candidates: #{data.pool_report.tail_only_candidates}
+    - Tail-verified candidates: #{data.pool_report.tail_verified_candidates}
 
     ## Budget Frontier
 
@@ -1311,6 +1954,12 @@ defmodule Sugary.PCRSEnsemblePublisher do
     | Policy | vs team-ev-max-2 | vs v0 |
     | --- | ---: | ---: |
     #{bootstrap_rows}
+
+    ## Marginal Precision Bands
+
+    | Policy | Band | Rank Range | Claims | Hits | Noise | Marginal Precision | Min Posterior | Max Posterior |
+    | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+    #{band_rows}
 
     ## Repo Group Generalization
 

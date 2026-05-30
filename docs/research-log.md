@@ -801,3 +801,79 @@ Interpretation:
 - A separate F1-oriented candidate exists: budget72 adds seven more true positives than trust mode, but also admits nine more false positives.
 - The F1-oriented candidate beats v0 on F1, but does not beat v0 on UAF1. This supports maintaining two modes instead of forcing one policy to optimize both product trust and benchmark F1.
 - Budget85 currently exposes the candidate-pool/publisher limit: more budget can find more hits, but precision drops below the promotion floor. The next useful research should raise candidate quality or add a stronger refuter before spending that budget.
+
+## 2026-05-30: PCRS Ensemble Publisher v2 Tail Verification
+
+Checkpoint:
+
+```text
+branch: codex/pcrs-v2-tail-verification
+baseline commit: 6a2df4b
+status: local no-key proxy passed
+official Martian score: not claimed
+```
+
+Command sequence:
+
+```sh
+mix escript.build
+./sugary pcrs ensemble publisher --id pcrs-ensemble-tail-v2 --limit 50 --offset 0
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260530T171619Z-pcrs-ensemble-tail-v2 --method posterior-max1-plus-source5-qualified-triad-budget52 --tool sugary-pcrs-trust-v2 --policy raw --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_pcrs_trust_v2 --limit 50 --offset 0 --id pcrs-trust-v2-parity
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260530T171619Z-pcrs-ensemble-tail-v2 --method qualified-f1-trust-plus-tail-team-xhigh-budget78 --tool sugary-pcrs-qualified-f1-v2 --policy raw --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_pcrs_qualified_f1_v2 --limit 50 --offset 0 --id pcrs-qualified-f1-v2-parity
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260530T171619Z-pcrs-ensemble-tail-v2 --method raw-f1-tail-diagnostic-budget110 --tool sugary-pcrs-raw-f1-v2 --policy raw --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_pcrs_raw_f1_v2 --limit 50 --offset 0 --id pcrs-raw-f1-v2-parity
+```
+
+Run artifacts:
+
+```text
+.sugary/research/pcrs-ensemble-publisher/20260530T171619Z-pcrs-ensemble-tail-v2
+.sugary/research/martian-parity/20260530T171727Z-pcrs-trust-v2-parity
+.sugary/research/martian-parity/20260530T171734Z-pcrs-qualified-f1-v2-parity
+.sugary/research/martian-parity/20260530T171741Z-pcrs-raw-f1-v2-parity
+.sugary/research/martian-no-key/20260530T171749Z-pcrs-trust-v2-no-key
+.sugary/research/martian-no-key/20260530T171754Z-pcrs-qualified-f1-v2-no-key
+.sugary/research/martian-no-key/20260530T171758Z-pcrs-raw-f1-v2-no-key
+```
+
+Core results:
+
+| Policy | Mode | F1 | Precision | Recall | Hits | Noise | Comments |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `posterior-max1-plus-source5-qualified-triad-budget52` | trust/default | 0.455 | 0.827 | 0.314 | 43 | 9 | 52 |
+| `qualified-f1-trust-plus-tail-team-xhigh-budget78` | qualified F1 | 0.521 | 0.718 | 0.409 | 56 | 22 | 78 |
+| `raw-f1-tail-diagnostic-budget110` | raw F1 diagnostic | 0.494 | 0.555 | 0.445 | 61 | 49 | 110 |
+
+V2 gate:
+
+| Gate | Result |
+| --- | --- |
+| Trust/default F1 >= 0.444 | pass: 0.455 |
+| Trust/default precision >= 0.800 | pass: 0.827 |
+| Qualified F1 >= 0.520 | pass: 0.521 |
+| Qualified precision >= 0.700 | pass: 0.718 |
+| Qualified hits >= 56 | pass: 56 |
+| Candidate-pool oracle recall >= 0.570 | pass: 79/137 = 0.577 |
+| Repo groups nonnegative on at least 4/5 | pass: 4/5 |
+| No official score claim | pass |
+
+Design change:
+
+- Keep trust/default on the legacy core ranker.
+- Expand the candidate pool with historical non-oracle tail sources.
+- Add a qualified-F1 publisher that preserves the trust set, then admits at most one team-backed or xhigh tail claim per PR after near-duplicate suppression.
+- Keep raw-F1 as diagnostic only; it finds more hits but admits too much noise for promotion.
+
+Martian no-key exports:
+
+| Tool | Candidates | PRs with candidates | Judge pairs | Official score |
+| --- | ---: | ---: | ---: | --- |
+| `sugary-pcrs-trust-v2` | 52 | 46/50 | 148 | unavailable without `MARTIAN_API_KEY` |
+| `sugary-pcrs-qualified-f1-v2` | 78 | 47/50 | 229 | unavailable without `MARTIAN_API_KEY` |
+| `sugary-pcrs-raw-f1-v2` | 110 | 50/50 | 327 | unavailable without `MARTIAN_API_KEY` |
+
+Interpretation:
+
+- V2 clears the local no-key stretch target, but it is still a proxy result, not public benchmark validation.
+- The useful product shape is now clearer: trust/default and qualified-F1 should be separate policies.
+- Tail expansion without a publisher is harmful; the raw diagnostic has higher recall but much lower precision.
+- The next loop should validate whether these exported candidates survive real Martian judging or reproduce on a fresh public slice before productizing the qualified-F1 mode.
