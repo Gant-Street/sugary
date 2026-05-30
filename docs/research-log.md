@@ -530,3 +530,65 @@ Lock the strict PCRS repo candidate plus an explicit budgeted ranking policy, th
 - No added net noise.
 - At least one unique true positive.
 - Paired bootstrap interval not crossing zero, or enough additional cases to explain why the interval is still underpowered.
+
+## 2026-05-30: Martian Offline Parity Export v0
+
+Command sequence:
+
+```sh
+mix escript.build
+./sugary martian parity export --source-run .sugary/research/runs/20260530T072359Z-martian-autoresearch-v0 --method pcrs-codex-repo-low-strict --tool sugary-pcrs-repo-budget-max2 --policy team-ev-max-2 --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_local_parity_v0 --limit 50 --offset 0 --id martian-official-parity-v0
+cd .sugary/research/benchmarks/martian-offline/offline
+MARTIAN_MODEL=sugary_local_parity_v0 uv run python -m code_review_benchmark.step2_extract_comments --tool sugary-pcrs-repo-budget-max2 --limit 1
+MARTIAN_MODEL=sugary_local_parity_v0 uv run python -m code_review_benchmark.step2_5_dedup_candidates --tool sugary-pcrs-repo-budget-max2 --force
+MARTIAN_MODEL=sugary_local_parity_v0 uv run python -m code_review_benchmark.step3_judge_comments --tool sugary-pcrs-repo-budget-max2 --dedup-groups results/sugary_local_parity_v0/dedup_groups.json --limit 1
+uv run python analysis/benchmark_dashboard.py
+uv run pytest
+```
+
+Run artifacts:
+
+```text
+.sugary/research/martian-parity/20260530T152430Z-martian-official-parity-v0
+.sugary/research/benchmarks/martian-offline/offline/results/sugary_local_parity_v0/candidates.json
+.sugary/research/benchmarks/martian-offline/offline/results/sugary_local_parity_v0/dedup_groups.json
+```
+
+Scope:
+
+- Benchmark: Martian Code Review Bench offline, local official artifact parity only.
+- Cases: 50/50 local Martian PRs.
+- Sugary source run: `20260530T072359Z-martian-autoresearch-v0`.
+- Method: `pcrs-codex-repo-low-strict`.
+- Budget policy: `team-ev-max-2`.
+- Tool id inserted into Martian artifacts: `sugary-pcrs-repo-budget-max2`.
+- Official score: no.
+- Submission: no.
+
+Result:
+
+| Check | Result |
+| --- | ---: |
+| PRs with Sugary review entry in `benchmark_data.json` | 50/50 |
+| Martian-style candidates written | 51 |
+| Singleton dedup groups written | 51 |
+| Martian benchmark commit | `279f279` |
+| Martian pytest suite | 28 passed |
+
+Official pipeline status:
+
+- Step 2 extraction loaded 50 PRs, then stopped with `ValueError: MARTIAN_API_KEY environment variable required`.
+- Step 2.5 dedup loaded `results/sugary_local_parity_v0/dedup_groups.json`, then stopped with the same missing key.
+- Step 3 judge loaded the Sugary candidates and dedup groups, then stopped with the same missing key.
+- Dashboard generation completed against existing bundled evaluations, but cannot include Sugary until Step 3 writes evaluations for `sugary-pcrs-repo-budget-max2`.
+
+Interpretation:
+
+- Sugary now reaches local official-harness artifact parity: Martian can see Sugary as a tool with one review entry per PR plus model-local candidates and dedup groups.
+- The remaining blocker is benchmark judge credentials, not missing local Sugary artifacts.
+- The current `dedup_groups.json` is a singleton no-LLM fallback, not Martian's official LLM dedup.
+- This still does not validate PCRS as a general approach and does not create a public benchmark claim.
+
+Next research move:
+
+Configure `MARTIAN_API_KEY` and a fixed `MARTIAN_MODEL`, run Martian Step 2, Step 2.5, Step 3, and dashboard locally for `sugary-pcrs-repo-budget-max2`, then compare the official local precision/recall/F1 against CodeRabbit, Cubic, Greptile, and the other bundled tools without submitting anything.

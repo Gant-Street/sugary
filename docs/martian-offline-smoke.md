@@ -37,6 +37,19 @@ The script reads `offline/results/benchmark_data.json`, fetches the correspondin
 ./sugary experiment run experiments/public-martian-codex-transfer-v0.toml --replay-mode cache-first
 ```
 
+To export an existing Sugary run into Martian's local official offline artifact layout, use:
+
+```sh
+./sugary martian parity export \
+  --source-run .sugary/research/runs/<run-id> \
+  --method pcrs-codex-repo-low-strict \
+  --tool sugary-pcrs-repo-budget-max2 \
+  --policy team-ev-max-2 \
+  --limit 50
+```
+
+See [Martian Offline Parity](martian-official-parity.md) for the local official pipeline handoff.
+
 ## Output
 
 Each run writes normal Sugary artifacts plus:
