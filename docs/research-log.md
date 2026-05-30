@@ -644,3 +644,92 @@ Interpretation:
 - Without `MARTIAN_API_KEY`, the best available work is target analysis, proxy iteration, and making the official score gap explicit.
 - Sugary's exported candidate budget is conservative relative to top bundled tools, so the next no-key research loop should focus on higher-recall candidate generation while preserving the budgeted publisher.
 - Any claim that Sugary beats or trails these tools must wait for official judging of Sugary's candidates.
+
+## 2026-05-30: PCRS Ensemble Publisher v0
+
+Command sequence:
+
+```sh
+mix escript.build
+./sugary pcrs ensemble publisher --id pcrs-ensemble-publisher-v0 --limit 50 --offset 0
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260530T161531Z-pcrs-ensemble-publisher-v0 --method pcrs-ensemble-publisher-v0 --tool sugary-pcrs-ensemble-v0 --policy raw --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_pcrs_ensemble_v0 --limit 50 --offset 0 --id pcrs-ensemble-v0-parity
+./sugary martian no-key report --sugary-tool sugary-pcrs-ensemble-v0 --model-dir sugary_pcrs_ensemble_v0 --martian-dir .sugary/research/benchmarks/martian-offline/offline --id pcrs-ensemble-v0-no-key
+```
+
+Run artifacts:
+
+```text
+.sugary/research/pcrs-ensemble-publisher/20260530T161531Z-pcrs-ensemble-publisher-v0
+.sugary/research/martian-parity/20260530T161617Z-pcrs-ensemble-v0-parity
+.sugary/research/martian-no-key/20260530T161617Z-pcrs-ensemble-v0-no-key
+```
+
+Scope:
+
+- API key: none.
+- Official Sugary score: no.
+- Source candidates: six existing no-key Martian reviewer runs.
+- Publisher: proof/evidence/refuter feature scoring, duplicate grouping, posterior policies, recall-at-budget, suppressed-TP/admitted-FP diagnostics, calibration, and leave-repo-out reporting.
+
+Baseline:
+
+| Metric | Value |
+| --- | ---: |
+| Baseline method | `pcrs-codex-repo-low-strict + team-ev-max-2` |
+| F1 | 0.362 |
+| UAF1 | 0.241 |
+| Hits | 34 |
+| Noise | 17 |
+| Avg comments/PR | 1.020 |
+
+Best publisher:
+
+| Metric | Value |
+| --- | ---: |
+| Policy | `posterior-max1-plus-source5-no-triad-budget52` |
+| F1 | 0.434 |
+| UAF1 | 0.342 |
+| Hits | 41 |
+| Noise | 11 |
+| Comments | 52 |
+| Avg comments/PR | 1.040 |
+| Candidate-pool oracle recall | 0.489 |
+| Pool hits | 67/137 |
+
+Gate result:
+
+| Gate | Result |
+| --- | --- |
+| F1 >= 0.430 | pass |
+| UAF1 >= 0.300 | pass |
+| Hits >= 41 | pass |
+| Noise <= 11 | pass |
+| Avg comments/PR <= 1.05 | pass |
+| Candidate-pool oracle recall >= 0.45 | pass |
+| Recall@budget improves over baseline | pass |
+| Nonnegative UAF1 delta on 4/5 repo groups | fail |
+
+Leave-repo-out:
+
+| Repo | UAF1 delta | Hit delta | Noise delta | Pass |
+| --- | ---: | ---: | ---: | --- |
+| `cal.com` | -0.155 | -3 | +2 | false |
+| `discourse` | +0.209 | +1 | -5 | true |
+| `grafana` | +0.325 | +4 | -2 | true |
+| `keycloak` | -0.044 | 0 | +1 | false |
+| `sentry` | +0.095 | +2 | -1 | true |
+
+Martian no-key export:
+
+| Item | Count |
+| --- | ---: |
+| PRs with Sugary review entry | 50/50 |
+| Sugary candidates awaiting Martian judge | 52 |
+| Candidate/golden judge pairs | 149 |
+
+Interpretation:
+
+- The aggregate no-key proxy target is reachable with a calibrated publisher over the existing candidate pool.
+- The result is not promoted because repo-generalization failed on Cal.com and Keycloak.
+- The `no-triad` policy is a useful ablation but needs validation on fresh cases before it becomes a default publishing rule.
+- The next valuable loop is not more threshold tuning. It is adding candidate generation or proof/refutation that specifically improves Cal.com and Keycloak without increasing the global false-positive rate.

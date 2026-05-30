@@ -1,0 +1,1114 @@
+defmodule Sugary.PCRSEnsemblePublisher do
+  @moduledoc false
+
+  @root ".sugary/research/pcrs-ensemble-publisher"
+  @method_id "pcrs-ensemble-publisher-v0"
+  @baseline_policy %{id: "team-ev-max-2", max_published: 2, min_score: 1.4}
+  @total_budget 52
+  @expected_claims 137
+
+  @default_baseline_run ".sugary/research/runs/20260530T072359Z-martian-autoresearch-v0"
+  @default_candidate_run ".sugary/research/runs/20260530T032918Z-martian-autoresearch-50-v0-experiment"
+
+  @default_sources [
+    %{run: @default_baseline_run, method: "pcrs-codex-repo-low-strict", source: "strict-repeat"},
+    %{
+      run: @default_candidate_run,
+      method: "pcrs-codex-repo-low-strict",
+      source: "strict-gauntlet"
+    },
+    %{run: @default_candidate_run, method: "pcrs-codex-repo-low", source: "broad-repo"},
+    %{run: @default_candidate_run, method: "pcrs-codex-proof-low", source: "proof-diff"},
+    %{run: @default_candidate_run, method: "codex-gpt-5.5-repo-low", source: "repo-raw"},
+    %{
+      run: @default_candidate_run,
+      method: "martian-pcrs-repo-plus-codex-low",
+      source: "prior-team"
+    }
+  ]
+
+  @policies [
+    %{id: "posterior-budget-52-t55", threshold: 0.55, max_per_pr: 2, total_budget: @total_budget},
+    %{id: "posterior-budget-52-t60", threshold: 0.60, max_per_pr: 2, total_budget: @total_budget},
+    %{id: "posterior-budget-52-t65", threshold: 0.65, max_per_pr: 2, total_budget: @total_budget},
+    %{id: "posterior-budget-52-t70", threshold: 0.70, max_per_pr: 2, total_budget: @total_budget},
+    %{id: "posterior-max1-t55", threshold: 0.55, max_per_pr: 1, total_budget: 50},
+    %{id: "posterior-max1-t60", threshold: 0.60, max_per_pr: 1, total_budget: 50},
+    %{
+      id: "posterior-max1-plus-source5-budget52",
+      strategy: "max1_plus_second",
+      threshold: 0.55,
+      max_per_pr: 2,
+      total_budget: 52,
+      second_min_source_count: 5,
+      second_min_posterior: 0.0
+    },
+    %{
+      id: "posterior-max1-plus-source6-budget50",
+      strategy: "max1_plus_second",
+      threshold: 0.55,
+      max_per_pr: 2,
+      total_budget: 50,
+      second_min_source_count: 6,
+      second_min_posterior: 0.0
+    },
+    %{
+      id: "posterior-max1-plus-source5-no-triad-budget52",
+      strategy: "max1_plus_second",
+      threshold: 0.55,
+      max_per_pr: 2,
+      total_budget: 52,
+      second_min_source_count: 5,
+      second_min_posterior: 0.0,
+      exclude_source_counts: [3],
+      hypothesis:
+        "Avoid partial-consensus triads unless later evidence shows they generalize; in this local proxy they are a high-noise boundary band."
+    },
+    %{
+      id: "posterior-max1-plus-source5-unbudgeted-diagnostic",
+      strategy: "max1_plus_second",
+      threshold: 0.55,
+      max_per_pr: 2,
+      total_budget: 9_999,
+      second_min_source_count: 5,
+      second_min_posterior: 0.0,
+      eligible_for_promotion: false,
+      diagnostic: true
+    }
+  ]
+
+  def run!(opts) when is_map(opts) do
+    opts
+    |> Enum.map(fn {key, value} ->
+      {String.to_atom(to_string(key) |> String.replace("-", "_")), value}
+    end)
+    |> run!()
+  end
+
+  def run!(opts) when is_list(opts) do
+    suite = Keyword.get(opts, :suite, "martian-offline")
+    limit = opts |> Keyword.get(:limit, 50) |> int()
+    offset = opts |> Keyword.get(:offset, 0) |> int()
+    id = Keyword.get(opts, :id, "pcrs-ensemble-publisher-v0")
+    baseline_run = Keyword.get(opts, :baseline_run, @default_baseline_run)
+    candidate_run = Keyword.get(opts, :candidate_run, @default_candidate_run)
+    sources = sources(baseline_run, candidate_run)
+    cases = Sugary.PublicBenchmarks.load_cases!(suite, limit: limit, offset: offset)
+    out_dir = make_out_dir(id)
+
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(out_dir)
+
+    baseline = baseline_report(baseline_run, cases)
+    case_pools = Enum.map(cases, &case_pool(&1, sources))
+    pool_report = candidate_pool_report(case_pools)
+    policy_reports = Enum.map(@policies, &policy_report(&1, case_pools))
+    winner = choose_winner(policy_reports, baseline)
+    leave_repo_out = leave_repo_out(case_pools, baseline, @policies)
+    calibration = calibration_report(case_pools, winner)
+    decision = decision(winner, baseline, pool_report, leave_repo_out)
+
+    write_artifacts!(
+      out_dir,
+      %{
+        suite: suite,
+        limit: limit,
+        offset: offset,
+        baseline_run: baseline_run,
+        candidate_run: candidate_run,
+        sources: sources,
+        baseline: baseline,
+        pool_report: pool_report,
+        policies: policy_reports,
+        winner: winner,
+        leave_repo_out: leave_repo_out,
+        calibration: calibration,
+        decision: decision
+      }
+    )
+
+    out_dir
+  end
+
+  def method_id, do: @method_id
+
+  defp sources(baseline_run, candidate_run) do
+    @default_sources
+    |> Enum.map(fn source ->
+      source
+      |> maybe_replace_run(@default_baseline_run, baseline_run)
+      |> maybe_replace_run(@default_candidate_run, candidate_run)
+    end)
+  end
+
+  defp maybe_replace_run(source, old, new),
+    do: if(source.run == old, do: %{source | run: new}, else: source)
+
+  defp baseline_report(run, cases) do
+    results =
+      Enum.map(cases, fn bench_case ->
+        claims =
+          run
+          |> claims_path("pcrs-codex-repo-low-strict", bench_case.id)
+          |> Sugary.Json.read!()
+          |> Enum.map(&atomize/1)
+
+        final_claims = publish_team_ev(claims, @baseline_policy)
+
+        %{
+          case: bench_case,
+          reviewer_result: %{cost: 0.0, latency_ms: 0},
+          candidate_claims: claims,
+          final_claims: final_claims
+        }
+      end)
+
+    %{
+      id: "baseline-team-ev-max-2",
+      score: score("baseline-team-ev-max-2", results),
+      results: results,
+      per_case: Enum.map(results, &case_row/1)
+    }
+  end
+
+  defp case_pool(bench_case, sources) do
+    raw =
+      sources
+      |> Enum.flat_map(fn source ->
+        source.run
+        |> claims_path(source.method, bench_case.id)
+        |> case do
+          nil ->
+            []
+
+          path ->
+            path
+            |> Sugary.Json.read!()
+            |> Enum.map(&normalize_claim(&1, source))
+        end
+      end)
+
+    candidates =
+      raw
+      |> merge_candidates(bench_case)
+      |> Enum.map(&add_labels(bench_case, &1))
+      |> Enum.map(&add_posterior(&1))
+      |> Enum.sort_by(& &1.posterior, :desc)
+
+    %{
+      case: bench_case,
+      repo_group: repo_group(bench_case),
+      raw_claims: raw,
+      candidates: candidates
+    }
+  end
+
+  defp claims_path(run, method_id, case_id) do
+    aggregate = Path.join([run, "claims", "#{method_id}--#{case_id}.json"])
+    method_local = Path.join([run, method_id, "claims", "#{case_id}.json"])
+
+    cond do
+      File.exists?(aggregate) -> aggregate
+      File.exists?(method_local) -> method_local
+      true -> nil
+    end
+  end
+
+  defp normalize_claim(raw_claim, source) do
+    claim = atomize(raw_claim)
+    existing_source = field(claim, :source, %{})
+
+    claim
+    |> Map.put(:source_run, source.run)
+    |> Map.put(:source_method, source.method)
+    |> Map.put(:source_id, source.source)
+    |> Map.put(:source, Map.merge(existing_source, %{ensemble_source_id: source.source}))
+    |> Map.put(:publish_decision, "suppress")
+  end
+
+  defp merge_candidates(raw, bench_case) do
+    raw
+    |> Enum.reduce([], fn claim, groups ->
+      case Enum.find_index(groups, &same_candidate?(&1, claim)) do
+        nil ->
+          [[claim] | groups]
+
+        index ->
+          List.update_at(groups, index, &[claim | &1])
+      end
+    end)
+    |> Enum.map(&merged_candidate(&1, bench_case))
+  end
+
+  defp same_candidate?(group, claim) do
+    representative = hd(group)
+
+    (explicit_key(representative) != "" and explicit_key(representative) == explicit_key(claim)) or
+      (normalize_path(field(representative, :path)) == normalize_path(field(claim, :path)) and
+         normalize_path(field(claim, :path)) not in ["", "unknown"] and
+         token_jaccard(claim_text(representative), claim_text(claim)) >= 0.30)
+  end
+
+  defp merged_candidate(claims, bench_case) do
+    representative = Enum.max_by(claims, &base_rank/1)
+    source_ids = claims |> Enum.map(&field(&1, :source_id)) |> Enum.uniq() |> Enum.sort()
+    source_methods = claims |> Enum.map(&field(&1, :source_method)) |> Enum.uniq() |> Enum.sort()
+
+    evidence =
+      claims |> Enum.flat_map(&(field(&1, :evidence, []) |> List.wrap())) |> uniq_by_summary()
+
+    failure_path =
+      claims |> Enum.flat_map(&(field(&1, :failure_path, []) |> List.wrap())) |> Enum.uniq()
+
+    merged_source =
+      representative
+      |> field(:source, %{})
+      |> Map.merge(%{
+        agreement_count: length(source_ids),
+        ensemble_source_ids: source_ids,
+        ensemble_source_methods: source_methods,
+        merged_claim_count: length(claims)
+      })
+
+    representative
+    |> Map.put(:id, "ensemble-#{short_hash(bench_case.id <> ":" <> merge_key(representative))}")
+    |> Map.put(:claim, merged_claim_text(representative, claims))
+    |> Map.put(:evidence, evidence)
+    |> Map.put(:failure_path, failure_path)
+    |> Map.put(:source, merged_source)
+    |> Map.put(:source_ids, source_ids)
+    |> Map.put(:source_methods, source_methods)
+    |> Map.put(:merged_claims, Enum.map(claims, &field(&1, :id)))
+    |> Map.put(:features, features(representative, claims, bench_case, source_ids))
+  end
+
+  defp merged_claim_text(representative, claims) do
+    variants =
+      claims
+      |> Enum.map(&field(&1, :claim))
+      |> Enum.reject(&(&1 in [nil, ""]))
+      |> Enum.uniq()
+      |> Enum.take(3)
+
+    case variants do
+      [] -> field(representative, :claim)
+      [one] -> one
+      [_one | _rest] -> Enum.join(variants, " ")
+    end
+  end
+
+  defp features(representative, claims, bench_case, source_ids) do
+    evidence = claims |> Enum.flat_map(&(field(&1, :evidence, []) |> List.wrap()))
+
+    categories =
+      claims |> Enum.map(&(field(&1, :category, "") |> to_string() |> String.downcase()))
+
+    path = field(representative, :path)
+
+    %{
+      max_confidence:
+        Enum.map(claims, &(field(&1, :confidence, 0.0) || 0.0)) |> Enum.max(fn -> 0.0 end),
+      severity_weight:
+        claims |> Enum.map(&(field(&1, :severity) |> severity_weight())) |> Enum.max(fn -> 1 end),
+      strongest_evidence_tier:
+        evidence |> Enum.map(&(field(&1, :tier, 5) || 5)) |> Enum.min(fn -> 5 end),
+      evidence_count: length(evidence),
+      source_count: length(source_ids),
+      has_strict: Enum.any?(source_ids, &String.contains?(&1, "strict")),
+      has_broad_repo: "broad-repo" in source_ids,
+      has_proof_diff: "proof-diff" in source_ids,
+      has_prior_team: "prior-team" in source_ids,
+      has_repo_raw: "repo-raw" in source_ids,
+      path_known: normalize_path(path) not in ["", "unknown"],
+      line_known: not is_nil(field(representative, :start_line) || field(representative, :line)),
+      changed_file_support: changed_file_support?(bench_case, path),
+      has_failure_path:
+        claims |> Enum.any?(&(field(&1, :failure_path, []) |> List.wrap() |> length() > 0)),
+      has_suggested_test: claims |> Enum.any?(&(field(&1, :suggested_test, "") not in [nil, ""])),
+      introduced_by_pr: Enum.any?(claims, &(field(&1, :introduced_by_pr, true) == true)),
+      risk_category: risk_category?(categories),
+      low_style:
+        Enum.any?(
+          claims,
+          &(field(&1, :category, "") == "style" or field(&1, :severity, "") == "low")
+        ),
+      weak_or_missing_evidence: evidence == [] or Enum.all?(evidence, &(field(&1, :tier, 5) >= 5))
+    }
+  end
+
+  defp add_labels(bench_case, candidate) do
+    expected = Sugary.ClaimMatcher.expected_claim(bench_case, candidate)
+    known_non_issue = Sugary.ClaimMatcher.known_non_issue(bench_case, candidate)
+
+    candidate
+    |> Map.put(:expected_id, if(expected, do: field(expected, :id), else: nil))
+    |> Map.put(:is_true_positive, not is_nil(expected) and is_nil(known_non_issue))
+    |> Map.put(:is_noise, is_nil(expected) or not is_nil(known_non_issue))
+  end
+
+  defp add_posterior(candidate) do
+    raw = raw_posterior_score(candidate.features)
+    posterior = 1.0 / (1.0 + :math.exp(-5.0 * (raw - 0.62)))
+    candidate |> Map.put(:raw_posterior_score, raw) |> Map.put(:posterior, posterior)
+  end
+
+  defp raw_posterior_score(f) do
+    0.0
+    |> Kernel.+(0.30 * clamp(f.max_confidence))
+    |> Kernel.+(0.10 * normalize(f.severity_weight, 4))
+    |> Kernel.+(0.12 * evidence_score(f.strongest_evidence_tier))
+    |> Kernel.+(0.16 * normalize(min(f.source_count, 4), 4))
+    |> Kernel.+(if(f.has_strict, do: 0.11, else: 0.0))
+    |> Kernel.+(if(f.has_broad_repo, do: 0.07, else: 0.0))
+    |> Kernel.+(if(f.has_proof_diff, do: 0.05, else: 0.0))
+    |> Kernel.+(if(f.has_prior_team, do: 0.04, else: 0.0))
+    |> Kernel.+(if(f.path_known, do: 0.06, else: -0.04))
+    |> Kernel.+(if(f.line_known, do: 0.04, else: 0.0))
+    |> Kernel.+(if(f.changed_file_support, do: 0.05, else: -0.02))
+    |> Kernel.+(if(f.has_failure_path, do: 0.06, else: -0.02))
+    |> Kernel.+(if(f.has_suggested_test, do: 0.03, else: 0.0))
+    |> Kernel.+(if(f.risk_category, do: 0.04, else: 0.0))
+    |> Kernel.+(if(f.introduced_by_pr, do: 0.02, else: -0.18))
+    |> Kernel.-(if(f.low_style, do: 0.08, else: 0.0))
+    |> Kernel.-(if(f.weak_or_missing_evidence, do: 0.10, else: 0.0))
+    |> clamp()
+  end
+
+  defp policy_report(policy, case_pools) do
+    selected = selected_candidate_ids(case_pools, policy)
+    results = Enum.map(case_pools, &policy_case_result(&1, policy, selected))
+    score = score(policy.id, results)
+    per_case = Enum.map(results, &case_row/1)
+
+    %{
+      id: policy.id,
+      policy: policy,
+      score: score,
+      usefulness_adjusted_f1: uaf1(score),
+      results: results,
+      per_case: per_case,
+      recall_at_budget: recall_at_budget(case_pools, policy, selected),
+      tp_at_1: tp_at_k(case_pools, 1),
+      tp_at_2: tp_at_k(case_pools, 2),
+      suppressed_tp: suppressed_tp(results),
+      admitted_fp: score.noise,
+      calibration: calibration_buckets(results)
+    }
+  end
+
+  defp policy_case_result(case_pool, policy, selected) do
+    final_claims = publish_posterior(case_pool.candidates, policy, selected)
+
+    %{
+      case: case_pool.case,
+      reviewer_result: %{cost: 0.0, latency_ms: 0},
+      candidate_claims:
+        Enum.map(case_pool.candidates, &Map.put(&1, :publish_decision, "suppress")),
+      final_claims: final_claims
+    }
+  end
+
+  defp publish_posterior(candidates, policy, selected) do
+    candidates
+    |> policy_case_candidates(policy)
+    |> Enum.map(fn claim ->
+      if MapSet.member?(selected, claim.id) do
+        Map.put(claim, :publish_decision, "publish")
+      else
+        claim
+        |> Map.put(:publish_decision, "suppress")
+        |> Map.put(:suppressed_reason, "posterior_below_threshold")
+      end
+    end)
+  end
+
+  defp selected_candidate_ids(case_pools, policy) do
+    case_pools
+    |> Enum.flat_map(fn case_pool ->
+      policy_case_candidates(case_pool.candidates, policy)
+    end)
+    |> Enum.filter(&(&1.posterior >= policy.threshold))
+    |> Enum.sort_by(& &1.posterior, :desc)
+    |> Enum.take(policy.total_budget)
+    |> Enum.map(& &1.id)
+    |> MapSet.new()
+  end
+
+  defp policy_case_candidates(candidates, %{strategy: "max1_plus_second"} = policy) do
+    sorted =
+      candidates
+      |> Enum.filter(&allowed_by_policy?(&1, policy))
+      |> Enum.sort_by(& &1.posterior, :desc)
+
+    first = Enum.take(sorted, 1)
+
+    second =
+      sorted
+      |> Enum.drop(1)
+      |> Enum.filter(fn candidate ->
+        candidate.posterior >= Map.get(policy, :second_min_posterior, 0.0) and
+          candidate.features.source_count >= Map.get(policy, :second_min_source_count, 1)
+      end)
+      |> Enum.take(max(policy.max_per_pr - 1, 0))
+
+    first ++ second
+  end
+
+  defp policy_case_candidates(candidates, policy) do
+    candidates
+    |> Enum.filter(&allowed_by_policy?(&1, policy))
+    |> Enum.sort_by(& &1.posterior, :desc)
+    |> Enum.take(policy.max_per_pr)
+  end
+
+  defp allowed_by_policy?(candidate, policy) do
+    source_count = candidate.features.source_count
+    source_count not in Map.get(policy, :exclude_source_counts, [])
+  end
+
+  defp choose_winner(policy_reports, baseline) do
+    eligible =
+      Enum.filter(policy_reports, fn report ->
+        Map.get(report.policy, :eligible_for_promotion, true)
+      end)
+
+    reports = if eligible == [], do: policy_reports, else: eligible
+
+    reports
+    |> Enum.max_by(fn report ->
+      score = report.score
+
+      {
+        gates_score(report, baseline),
+        uaf1(score),
+        score.f1,
+        score.hits,
+        -score.noise
+      }
+    end)
+  end
+
+  defp gates_score(report, baseline) do
+    checks = promotion_checks(report, baseline, %{oracle_recall: 1.0}, %{repo_groups_passing: 5})
+    Enum.count(checks, fn {_key, value} -> value == true end)
+  end
+
+  defp candidate_pool_report(case_pools) do
+    expected_total =
+      case_pools
+      |> Enum.map(&(Sugary.ClaimMatcher.expected_ids(&1.case) |> MapSet.size()))
+      |> Enum.sum()
+
+    hits_by_case =
+      Enum.map(case_pools, fn case_pool ->
+        ids =
+          case_pool.candidates
+          |> Enum.flat_map(fn candidate ->
+            if candidate.expected_id, do: [candidate.expected_id], else: []
+          end)
+          |> MapSet.new()
+
+        %{
+          case_id: case_pool.case.id,
+          repo_group: case_pool.repo_group,
+          expected: Sugary.ClaimMatcher.expected_ids(case_pool.case) |> MapSet.size(),
+          pool_hits: MapSet.size(ids),
+          raw_claims: length(case_pool.raw_claims),
+          merged_candidates: length(case_pool.candidates)
+        }
+      end)
+
+    pool_hits = Enum.sum(Enum.map(hits_by_case, & &1.pool_hits))
+
+    %{
+      expected_claims: expected_total,
+      pool_hits: pool_hits,
+      oracle_recall: ratio(pool_hits, expected_total),
+      raw_claims: Enum.sum(Enum.map(case_pools, &length(&1.raw_claims))),
+      merged_candidates: Enum.sum(Enum.map(case_pools, &length(&1.candidates))),
+      per_case: hits_by_case
+    }
+  end
+
+  defp recall_at_budget(case_pools, policy, selected) do
+    hit_ids =
+      case_pools
+      |> Enum.flat_map(fn case_pool ->
+        case_pool.candidates
+        |> Enum.filter(&MapSet.member?(selected, &1.id))
+        |> Enum.map(&Map.put(&1, :case_id, case_pool.case.id))
+      end)
+      |> Enum.flat_map(fn candidate ->
+        if candidate.expected_id do
+          ["#{candidate.case_id}:#{candidate.expected_id}"]
+        else
+          []
+        end
+      end)
+      |> MapSet.new()
+
+    %{
+      budget: policy.total_budget,
+      selected: MapSet.size(selected),
+      hits: MapSet.size(hit_ids),
+      recall: ratio(MapSet.size(hit_ids), @expected_claims)
+    }
+  end
+
+  defp tp_at_k(case_pools, k) do
+    case_pools
+    |> Enum.count(fn case_pool ->
+      case_pool.candidates
+      |> Enum.sort_by(& &1.posterior, :desc)
+      |> Enum.take(k)
+      |> Enum.any?(& &1.is_true_positive)
+    end)
+  end
+
+  defp suppressed_tp(results) do
+    Enum.reduce(results, 0, fn result, total ->
+      candidate_ids =
+        result.candidate_claims
+        |> Enum.flat_map(fn claim -> if claim.expected_id, do: [claim.expected_id], else: [] end)
+        |> MapSet.new()
+
+      published_ids =
+        result.final_claims
+        |> Enum.filter(&(&1.publish_decision == "publish"))
+        |> Enum.flat_map(fn claim -> if claim.expected_id, do: [claim.expected_id], else: [] end)
+        |> MapSet.new()
+
+      total + MapSet.size(MapSet.difference(candidate_ids, published_ids))
+    end)
+  end
+
+  defp calibration_buckets(results) do
+    results
+    |> Enum.flat_map(& &1.final_claims)
+    |> Enum.group_by(fn claim ->
+      low = Float.floor((claim.posterior || 0.0) * 10) / 10
+      high = low + 0.1
+      "#{fmt(low)}-#{fmt(high)}"
+    end)
+    |> Map.new(fn {bucket, claims} ->
+      tp = Enum.count(claims, & &1.is_true_positive)
+      fp = length(claims) - tp
+      {bucket, %{claims: length(claims), tp: tp, fp: fp, precision: ratio(tp, length(claims))}}
+    end)
+  end
+
+  defp calibration_report(_case_pools, nil), do: %{}
+  defp calibration_report(_case_pools, winner), do: winner.calibration
+
+  defp leave_repo_out(case_pools, baseline, policies) do
+    base_by_case = Map.new(baseline.per_case, &{&1.case_id, &1})
+
+    groups =
+      case_pools
+      |> Enum.map(& &1.repo_group)
+      |> Enum.uniq()
+      |> Enum.sort()
+
+    rows =
+      Enum.map(groups, fn group ->
+        held_out = Enum.filter(case_pools, &(&1.repo_group == group))
+        train = Enum.reject(case_pools, &(&1.repo_group == group))
+        policy = tune_policy(train, policies)
+
+        selected = selected_candidate_ids(held_out, policy)
+        results = Enum.map(held_out, &policy_case_result(&1, policy, selected))
+        score = score(policy.id, results)
+
+        baseline_rows = Enum.map(held_out, &Map.fetch!(base_by_case, &1.case.id))
+        baseline_score = aggregate_case_rows(baseline_rows)
+
+        %{
+          repo_group: group,
+          policy_id: policy.id,
+          threshold: policy.threshold,
+          score: Map.from_struct(score),
+          usefulness_adjusted_f1: uaf1(score),
+          baseline: baseline_score,
+          baseline_usefulness_adjusted_f1: baseline_score.f1 * baseline_score.usefulness,
+          uaf1_delta: uaf1(score) - baseline_score.f1 * baseline_score.usefulness,
+          noise_delta: score.noise - baseline_score.noise,
+          hit_delta: score.hits - baseline_score.hits,
+          passes: uaf1(score) >= baseline_score.f1 * baseline_score.usefulness
+        }
+      end)
+
+    %{
+      rows: rows,
+      repo_groups_passing: Enum.count(rows, & &1.passes),
+      repo_group_count: length(rows)
+    }
+  end
+
+  defp tune_policy(train_case_pools, policies) do
+    policies
+    |> Enum.reject(&(Map.get(&1, :eligible_for_promotion, true) == false))
+    |> Enum.map(fn policy ->
+      selected = selected_candidate_ids(train_case_pools, policy)
+      results = Enum.map(train_case_pools, &policy_case_result(&1, policy, selected))
+      score = score("train-#{policy.id}", results)
+      {policy, uaf1(score), score.f1, score.hits, score.noise, score.avg_comments_per_pr}
+    end)
+    |> Enum.filter(fn {_policy, _uaf1, _f1, _hits, _noise, avg_comments_per_pr} ->
+      avg_comments_per_pr <= 1.05
+    end)
+    |> Enum.max_by(
+      fn {_policy, uaf1, f1, hits, noise, avg_comments_per_pr} ->
+        {uaf1, f1, hits, -noise, -avg_comments_per_pr}
+      end,
+      fn ->
+        {%{id: "fallback", threshold: 0.70, max_per_pr: 1, total_budget: 50}, 0.0, 0.0, 0, 0, 0.0}
+      end
+    )
+    |> elem(0)
+  end
+
+  defp aggregate_case_rows(rows) do
+    totals =
+      Enum.reduce(
+        rows,
+        %{cases: 0, expected_claims: 0, published_claims: 0, hits: 0, noise: 0},
+        fn row, acc ->
+          %{
+            cases: acc.cases + 1,
+            expected_claims: acc.expected_claims + row.expected,
+            published_claims: acc.published_claims + row.comments,
+            hits: acc.hits + row.hits,
+            noise: acc.noise + row.noise
+          }
+        end
+      )
+
+    precision = ratio(totals.hits, totals.published_claims)
+    recall = ratio(totals.hits, totals.expected_claims)
+
+    totals
+    |> Map.put(:precision, precision)
+    |> Map.put(:recall, recall)
+    |> Map.put(
+      :f1,
+      if(precision + recall == 0, do: 0.0, else: 2 * precision * recall / (precision + recall))
+    )
+    |> Map.put(:usefulness, precision)
+    |> Map.put(:avg_comments_per_pr, ratio(totals.published_claims, totals.cases))
+  end
+
+  defp decision(winner, baseline, pool_report, leave_repo_out) do
+    checks = promotion_checks(winner, baseline, pool_report, leave_repo_out)
+    passed = Enum.all?(Map.values(checks))
+
+    %{
+      decision: if(passed, do: "promote", else: "reject"),
+      winner: winner && winner.id,
+      checks: checks,
+      reason:
+        if(passed,
+          do: "PCRS Ensemble Publisher v0 cleared all no-key local proxy gates.",
+          else: "PCRS Ensemble Publisher v0 did not clear all no-key local proxy gates."
+        )
+    }
+  end
+
+  defp promotion_checks(nil, _baseline, _pool_report, _leave_repo_out),
+    do: %{winner_exists: false}
+
+  defp promotion_checks(winner, baseline, pool_report, leave_repo_out) do
+    score = winner.score
+
+    %{
+      f1: score.f1 >= 0.430,
+      uaf1: uaf1(score) >= 0.300,
+      hits: score.hits >= 41,
+      noise: score.noise <= 11,
+      avg_comments_per_pr: score.avg_comments_per_pr <= 1.05,
+      candidate_pool_oracle_recall: pool_report.oracle_recall >= 0.45,
+      recall_at_budget:
+        winner.recall_at_budget.hits >= baseline.score.hits and
+          winner.recall_at_budget.recall >= baseline.score.recall,
+      leave_repo_out: leave_repo_out.repo_groups_passing >= 4,
+      not_official_score: true
+    }
+  end
+
+  defp write_artifacts!(out_dir, data) do
+    report_policies = Enum.map(data.policies, &drop_results/1)
+    winner = if(data.winner, do: drop_results(data.winner), else: nil)
+
+    Sugary.Json.write!(Path.join(out_dir, "config.json"), %{
+      suite: data.suite,
+      limit: data.limit,
+      offset: data.offset,
+      baseline_run: data.baseline_run,
+      candidate_run: data.candidate_run,
+      sources: data.sources,
+      method_id: @method_id,
+      official_score_claim: false,
+      martian_api_used: false
+    })
+
+    Sugary.Json.write!(Path.join(out_dir, "baseline-scorecard.json"), data.baseline.score)
+
+    Sugary.Json.write!(
+      Path.join(out_dir, "candidate-pool.json"),
+      Map.drop(data.pool_report, [:per_case])
+    )
+
+    Sugary.Json.write!(
+      Path.join(out_dir, "candidate-pool-per-case.json"),
+      data.pool_report.per_case
+    )
+
+    write_candidate_details!(out_dir, data.policies)
+    Sugary.Json.write!(Path.join(out_dir, "policy-scorecards.json"), report_policies)
+    Sugary.Json.write!(Path.join(out_dir, "leave-repo-out.json"), data.leave_repo_out)
+    Sugary.Json.write!(Path.join(out_dir, "calibration.json"), data.calibration)
+    Sugary.Json.write!(Path.join(out_dir, "decision.json"), data.decision)
+
+    if data.winner do
+      write_winner_claims!(out_dir, data.winner)
+    end
+
+    File.write!(Path.join(out_dir, "report.md"), render_report(data, winner, report_policies))
+  end
+
+  defp write_candidate_details!(out_dir, policies) do
+    best = Enum.max_by(policies, &uaf1(&1.score), fn -> nil end)
+
+    if best do
+      details =
+        best.results
+        |> Enum.flat_map(fn result ->
+          published_ids =
+            result.final_claims
+            |> Enum.filter(&(&1.publish_decision == "publish"))
+            |> MapSet.new(& &1.id)
+
+          Enum.map(result.candidate_claims, fn claim ->
+            %{
+              case_id: result.case.id,
+              repo_group: repo_group(result.case),
+              id: claim.id,
+              claim: claim.claim,
+              path: field(claim, :path),
+              expected_id: claim.expected_id,
+              is_true_positive: claim.is_true_positive,
+              is_noise: claim.is_noise,
+              posterior: claim.posterior,
+              raw_posterior_score: claim.raw_posterior_score,
+              published_by_best_uaf1_policy: MapSet.member?(published_ids, claim.id),
+              features: claim.features,
+              source_ids: claim.source_ids,
+              source_methods: claim.source_methods
+            }
+          end)
+        end)
+
+      lines = Enum.map(details, &(Sugary.Json.encode!(&1) <> "\n"))
+      File.write!(Path.join(out_dir, "candidate-details.jsonl"), lines)
+    end
+  end
+
+  defp write_winner_claims!(out_dir, winner) do
+    Enum.each(winner.results, fn result ->
+      Sugary.Json.write!(
+        Path.join([out_dir, "claims", "#{@method_id}--#{result.case.id}.json"]),
+        result.final_claims
+      )
+
+      Sugary.Json.write!(
+        Path.join([out_dir, @method_id, "claims", "#{result.case.id}.json"]),
+        result.final_claims
+      )
+    end)
+  end
+
+  defp render_report(data, winner, policy_reports) do
+    baseline = data.baseline.score
+
+    policy_rows =
+      policy_reports
+      |> Enum.map(fn report ->
+        score = report.score
+
+        "| #{report.id} | #{fmt(score.f1)} | #{fmt(report.usefulness_adjusted_f1)} | #{score.hits} | #{score.noise} | #{score.published_claims} | #{fmt(score.avg_comments_per_pr)} | #{fmt(report.recall_at_budget.recall)} | #{report.suppressed_tp} | #{report.admitted_fp} |"
+      end)
+      |> Enum.join("\n")
+
+    lroo_rows =
+      data.leave_repo_out.rows
+      |> Enum.map(fn row ->
+        "| #{row.repo_group} | #{fmt(row.uaf1_delta)} | #{row.hit_delta} | #{row.noise_delta} | #{fmt(row.threshold)} | #{row.passes} |"
+      end)
+      |> Enum.join("\n")
+
+    checks =
+      data.decision.checks
+      |> Enum.map(fn {key, value} -> "- #{key}: #{value}" end)
+      |> Enum.join("\n")
+
+    """
+    # PCRS Ensemble Publisher v0
+
+    No Martian API key was used. This is a no-key local proxy report, not an official Martian score.
+
+    ## Baseline
+
+    - Method: `pcrs-codex-repo-low-strict + team-ev-max-2`
+    - F1: #{fmt(baseline.f1)}
+    - UAF1: #{fmt(uaf1(baseline))}
+    - Hits: #{baseline.hits}
+    - Noise: #{baseline.noise}
+    - Avg comments/PR: #{fmt(baseline.avg_comments_per_pr)}
+
+    ## Candidate Pool
+
+    - Raw claims: #{data.pool_report.raw_claims}
+    - Merged candidates: #{data.pool_report.merged_candidates}
+    - Candidate-pool oracle recall: #{fmt(data.pool_report.oracle_recall)}
+    - Pool hits: #{data.pool_report.pool_hits}/#{data.pool_report.expected_claims}
+
+    ## Policies
+
+    | Policy | F1 | UAF1 | Hits | Noise | Comments | Avg Comments/PR | Recall@Budget | Suppressed TP | Admitted FP |
+    | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+    #{policy_rows}
+
+    ## Leave-Repo-Out
+
+    | Repo Group | UAF1 Delta | Hit Delta | Noise Delta | Threshold | Passes |
+    | --- | ---: | ---: | ---: | ---: | --- |
+    #{lroo_rows}
+
+    ## Decision
+
+    - Decision: `#{data.decision.decision}`
+    - Winner: `#{if(winner, do: winner.id, else: "none")}`
+
+    #{checks}
+
+    #{data.decision.reason}
+    """
+  end
+
+  defp drop_results(report) do
+    report
+    |> Map.drop([:results])
+    |> Map.update!(:score, &Map.from_struct/1)
+  end
+
+  defp publish_team_ev(claims, policy) do
+    claims
+    |> Enum.sort_by(&team_ev_score/1, :desc)
+    |> Enum.with_index()
+    |> Enum.map(fn {claim, index} ->
+      score = team_ev_score(claim)
+
+      if index < policy.max_published and score >= policy.min_score do
+        Map.put(claim, :publish_decision, "publish")
+      else
+        claim
+        |> Map.put(:publish_decision, "suppress")
+        |> Map.put(:suppressed_reason, "ranking_policy_threshold")
+      end
+    end)
+  end
+
+  defp team_ev_score(claim) do
+    confidence = field(claim, :confidence, 0.0) || 0.0
+    confidence * severity_weight(field(claim, :severity)) * agreement_count(claim)
+  end
+
+  defp case_row(result) do
+    published = Enum.filter(result.final_claims, &(&1.publish_decision == "publish"))
+
+    matched =
+      published
+      |> Enum.flat_map(fn claim ->
+        case Sugary.ClaimMatcher.expected_claim(result.case, claim) do
+          nil -> []
+          expected -> [field(expected, :id)]
+        end
+      end)
+
+    hit_ids = MapSet.new(matched)
+
+    %{
+      case_id: result.case.id,
+      repo_group: repo_group(result.case),
+      expected: Sugary.ClaimMatcher.expected_ids(result.case) |> MapSet.size(),
+      comments: length(published),
+      hits: MapSet.size(hit_ids),
+      noise: length(published) - MapSet.size(hit_ids)
+    }
+  end
+
+  defp score(method_id, results), do: Sugary.Scorer.score(method_id, results)
+  defp uaf1(score), do: score.f1 * score.usefulness
+
+  defp repo_group(bench_case) do
+    source_repo =
+      bench_case
+      |> field(:source_metadata, %{})
+      |> field(:repo, nil)
+
+    repo =
+      source_repo ||
+        bench_case
+        |> field(:repo, %{})
+        |> field(:name, "unknown")
+
+    repo
+    |> to_string()
+    |> String.replace(~r/-greptile$/, "")
+    |> String.replace(~r/-graphite$/, "")
+  end
+
+  defp changed_file_support?(bench_case, path) do
+    normalized = normalize_path(path)
+
+    if normalized in ["", "unknown"] do
+      false
+    else
+      changed_files =
+        bench_case.diff
+        |> to_string()
+        |> changed_files_from_diff()
+
+      normalized in changed_files or Enum.any?(changed_files, &String.ends_with?(normalized, &1))
+    end
+  end
+
+  defp changed_files_from_diff(diff) do
+    ~r/^diff --git a\/(.+?) b\/(.+)$/m
+    |> Regex.scan(diff)
+    |> Enum.map(fn [_line, _old, new] -> new end)
+    |> Enum.uniq()
+  end
+
+  defp risk_category?(categories) do
+    Enum.any?(categories, fn category ->
+      category in [
+        "security",
+        "auth",
+        "authorization",
+        "runtime",
+        "contract",
+        "schema",
+        "migration",
+        "concurrency",
+        "cache",
+        "correctness"
+      ]
+    end)
+  end
+
+  defp evidence_score(tier), do: (6 - min(max(int(tier), 1), 5)) / 5
+  defp normalize(value, max_value), do: clamp(value / max_value)
+  defp clamp(value), do: value |> max(0.0) |> min(1.0)
+
+  defp severity_weight(severity) do
+    %{"critical" => 4, "high" => 3, "medium" => 2, "low" => 1}
+    |> Map.get(severity |> to_string() |> String.downcase(), 1)
+  end
+
+  defp agreement_count(claim), do: field(field(claim, :source, %{}), :agreement_count, 1) || 1
+
+  defp base_rank(claim), do: team_ev_score(claim)
+
+  defp explicit_key(claim) do
+    claim
+    |> field(:dedupe_key, "")
+    |> to_string()
+    |> String.trim()
+  end
+
+  defp merge_key(claim), do: explicit_key(claim) <> ":" <> normalize_path(field(claim, :path))
+
+  defp token_jaccard(left, right) do
+    left_tokens = tokens(left)
+    right_tokens = tokens(right)
+    union = MapSet.union(left_tokens, right_tokens) |> MapSet.size()
+
+    if union == 0 do
+      0.0
+    else
+      MapSet.intersection(left_tokens, right_tokens) |> MapSet.size() |> Kernel./(union)
+    end
+  end
+
+  defp claim_text(claim) do
+    [
+      field(claim, :claim),
+      field(claim, :failure_path, []) |> List.wrap() |> Enum.join(" "),
+      field(claim, :evidence, [])
+      |> List.wrap()
+      |> Enum.map(&field(&1, :summary))
+      |> Enum.join(" ")
+    ]
+    |> Enum.join(" ")
+  end
+
+  defp tokens(text) do
+    text
+    |> to_string()
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9_]+/, " ")
+    |> String.split()
+    |> Enum.reject(&(String.length(&1) < 4))
+    |> MapSet.new()
+  end
+
+  defp uniq_by_summary(evidence) do
+    evidence
+    |> Enum.map(&atomize/1)
+    |> Enum.uniq_by(&field(&1, :summary, ""))
+  end
+
+  defp normalize_path(path), do: path |> to_string() |> String.trim()
+
+  defp short_hash(value),
+    do: :crypto.hash(:sha256, value) |> Base.encode16(case: :lower) |> String.slice(0, 12)
+
+  defp atomize(%{} = map) do
+    Map.new(map, fn {key, value} ->
+      key =
+        cond do
+          is_atom(key) -> key
+          is_binary(key) -> String.to_atom(key)
+          true -> key
+        end
+
+      {key, atomize(value)}
+    end)
+  end
+
+  defp atomize(list) when is_list(list), do: Enum.map(list, &atomize/1)
+  defp atomize(value), do: value
+
+  defp field(map, key, default \\ nil)
+
+  defp field(%{} = map, key, default),
+    do: Map.get(map, key, Map.get(map, to_string(key), default))
+
+  defp field(_other, _key, default), do: default
+
+  defp int(value) when is_integer(value), do: value
+  defp int(value) when is_float(value), do: trunc(value)
+  defp int(value) when is_binary(value), do: String.to_integer(value)
+  defp int(_value), do: 0
+
+  defp ratio(_num, 0), do: 0.0
+  defp ratio(num, den), do: num / den
+
+  defp fmt(value) when is_float(value), do: :erlang.float_to_binary(value, decimals: 3)
+  defp fmt(value), do: to_string(value)
+
+  defp make_out_dir(id) do
+    timestamp = DateTime.utc_now() |> Calendar.strftime("%Y%m%dT%H%M%SZ")
+    Path.join(@root, "#{timestamp}-#{id}")
+  end
+end
