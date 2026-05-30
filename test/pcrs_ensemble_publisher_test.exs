@@ -147,6 +147,15 @@ defmodule Sugary.PCRSEnsemblePublisherTest do
       assert no_triad["score"]["noise"] == 0
       assert no_triad["policy"]["exclude_source_counts"] == [3]
 
+      frontier = Sugary.Json.read!(Path.join(out_dir, "budget-frontier.json"))
+      assert frontier["objective"] == "budget_f1_pareto_frontier"
+      assert Map.has_key?(frontier["decision_rules"], "product_default_retained")
+
+      assert File.exists?(Path.join(out_dir, "bootstrap.json"))
+      assert File.exists?(Path.join(out_dir, "suppressed-true-positives.json"))
+      assert File.exists?(Path.join(out_dir, "admitted-false-positives.json"))
+      assert File.exists?(Path.join(out_dir, "calibration-by-policy.json"))
+      assert File.exists?(Path.join([out_dir, no_triad["id"], "claims", "#{case_id}.json"]))
       assert File.exists?(Path.join(out_dir, "candidate-details.jsonl"))
       assert File.read!(Path.join(out_dir, "report.md")) =~ "not an official Martian score"
     end)

@@ -733,3 +733,71 @@ Interpretation:
 - The promoted local proxy policy is still not an official Martian result and should not be described as benchmark superiority until Martian judges Sugary's candidates.
 - The qualified-triad rule is a useful source-composition calibration, but it needs validation on fresh cases before it becomes a public default.
 - The next valuable loop is not more threshold tuning. It is adding candidate generation or proof/refutation that specifically improves Cal.com without increasing the global false-positive rate.
+
+## 2026-05-30: PCRS Ensemble Publisher v1 Frontier
+
+Checkpoint:
+
+```text
+git tag: research/pcrs-ensemble-publisher-v0-local-pass
+commit: 56fc260
+checksum manifest: docs/artifact-checksums/pcrs-ensemble-publisher-v0-local-pass.sha256
+checksum manifest sha256: 3dec579557b5f5227b45a6c027cc7616e3a21a4b7961bb67eb1d7b3b2842f173
+```
+
+Command sequence:
+
+```sh
+mix escript.build
+./sugary pcrs ensemble publisher --id pcrs-ensemble-frontier-v1 --limit 50 --offset 0
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260530T164625Z-pcrs-ensemble-frontier-v1 --method posterior-max1-plus-source5-qualified-triad-budget52 --tool sugary-pcrs-trust-v1 --policy raw --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_pcrs_trust_v1 --limit 50 --offset 0 --id pcrs-trust-v1-parity
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260530T164625Z-pcrs-ensemble-frontier-v1 --method frontier-aggressive-budget72-source1-qualified-triad --tool sugary-pcrs-frontier-f1-v1 --policy raw --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_pcrs_frontier_f1_v1 --limit 50 --offset 0 --id pcrs-frontier-f1-v1-parity
+```
+
+Run artifacts:
+
+```text
+.sugary/research/pcrs-ensemble-publisher/20260530T164625Z-pcrs-ensemble-frontier-v1
+.sugary/research/martian-parity/20260530T164652Z-pcrs-trust-v1-parity
+.sugary/research/martian-parity/20260530T164652Z-pcrs-frontier-f1-v1-parity
+.sugary/research/martian-no-key/20260530T164652Z-pcrs-trust-v1-no-key
+.sugary/research/martian-no-key/20260530T164653Z-pcrs-frontier-f1-v1-no-key
+```
+
+Budget frontier:
+
+| Budget | Max possible F1 | Best local proxy policy | F1 | Precision | Recall | Hits | Noise | Comments |
+| ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 52 | 0.550 | `posterior-max1-plus-source5-qualified-triad-budget52` | 0.444 | 0.808 | 0.307 | 42 | 10 | 52 |
+| 62 | 0.623 | `frontier-balanced-budget62-source2-qualified-triad` | 0.452 | 0.726 | 0.328 | 45 | 17 | 62 |
+| 72 | 0.689 | `frontier-aggressive-budget72-source1-qualified-triad` | 0.478 | 0.721 | 0.358 | 49 | 19 | 68 |
+| 85 | 0.766 | `frontier-leaderboard-budget85-max-f1-diagnostic` | 0.493 | 0.679 | 0.387 | 53 | 25 | 78 |
+
+Decision:
+
+| Candidate | Decision | Reason |
+| --- | --- | --- |
+| Trust mode | keep | v0 remains the product-default policy: F1 0.444, precision 0.808, 52 comments. |
+| Leaderboard precision-floor mode | promote locally | Budget72 improves F1 to 0.478 while staying above the 0.70 precision floor. |
+| Budget85 max-F1 diagnostic | reject for promotion | F1 rises to 0.493, but precision falls below the 0.70 floor. |
+
+Bootstrap:
+
+| Candidate | UAF1 delta vs team-ev-max-2 | UAF1 delta vs v0 |
+| --- | ---: | ---: |
+| Trust mode | +0.118 [+0.028, +0.216] | 0.000 [0.000, 0.000] |
+| Budget72 F1 mode | +0.102 [+0.019, +0.200] | -0.015 [-0.072, +0.039] |
+
+Martian no-key exports:
+
+| Tool | Candidates | PRs with candidates | Judge pairs | Official score |
+| --- | ---: | ---: | ---: | --- |
+| `sugary-pcrs-trust-v1` | 52 | 46/50 | 148 | unavailable without `MARTIAN_API_KEY` |
+| `sugary-pcrs-frontier-f1-v1` | 68 | 48/50 | 200 | unavailable without `MARTIAN_API_KEY` |
+
+Interpretation:
+
+- The trust/default policy remains the best user-facing policy by UAF1 and precision.
+- A separate F1-oriented candidate exists: budget72 adds seven more true positives than trust mode, but also admits nine more false positives.
+- The F1-oriented candidate beats v0 on F1, but does not beat v0 on UAF1. This supports maintaining two modes instead of forcing one policy to optimize both product trust and benchmark F1.
+- Budget85 currently exposes the candidate-pool/publisher limit: more budget can find more hits, but precision drops below the promotion floor. The next useful research should raise candidate quality or add a stronger refuter before spending that budget.

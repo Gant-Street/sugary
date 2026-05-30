@@ -6,6 +6,8 @@ defmodule Sugary.PCRSEnsemblePublisher do
   @baseline_policy %{id: "team-ev-max-2", max_published: 2, min_score: 1.4}
   @total_budget 52
   @expected_claims 137
+  @v0_policy_id "posterior-max1-plus-source5-qualified-triad-budget52"
+  @bootstrap_samples 1_000
 
   @default_baseline_run ".sugary/research/runs/20260530T072359Z-martian-autoresearch-v0"
   @default_candidate_run ".sugary/research/runs/20260530T032918Z-martian-autoresearch-50-v0-experiment"
@@ -66,6 +68,8 @@ defmodule Sugary.PCRSEnsemblePublisher do
     },
     %{
       id: "posterior-max1-plus-source5-qualified-triad-budget52",
+      mode: "trust",
+      budget_tier: 52,
       strategy: "max1_plus_second",
       threshold: 0.55,
       max_per_pr: 2,
@@ -75,6 +79,64 @@ defmodule Sugary.PCRSEnsemblePublisher do
       require_qualified_triad: true,
       hypothesis:
         "Admit three-source consensus only when it combines raw repo context, prior-team agreement, and a strict reviewer."
+    },
+    %{
+      id: "frontier-balanced-budget62-source2-qualified-triad",
+      mode: "balanced",
+      budget_tier: 62,
+      strategy: "max1_plus_second",
+      threshold: 0.55,
+      max_per_pr: 2,
+      total_budget: 62,
+      second_min_source_count: 2,
+      second_min_posterior: 0.75,
+      require_qualified_triad: true,
+      hypothesis:
+        "Buy additional recall at a precision floor suitable for a balanced review mode."
+    },
+    %{
+      id: "frontier-aggressive-budget72-source1-qualified-triad",
+      mode: "aggressive",
+      budget_tier: 72,
+      strategy: "max1_plus_second",
+      threshold: 0.55,
+      max_per_pr: 2,
+      total_budget: 72,
+      second_min_source_count: 1,
+      second_min_posterior: 0.75,
+      require_qualified_triad: true,
+      hypothesis:
+        "Spend more comments only on high-posterior candidates that pass source-shape gating."
+    },
+    %{
+      id: "frontier-leaderboard-budget85-source1-qualified-triad",
+      mode: "leaderboard",
+      budget_tier: 85,
+      strategy: "max1_plus_second",
+      threshold: 0.55,
+      max_per_pr: 2,
+      total_budget: 85,
+      second_min_source_count: 1,
+      second_min_posterior: 0.75,
+      require_qualified_triad: true,
+      hypothesis:
+        "Leaderboard-mode candidate with a precision floor; may not use the full budget."
+    },
+    %{
+      id: "frontier-leaderboard-budget85-max-f1-diagnostic",
+      mode: "leaderboard_diagnostic",
+      budget_tier: 85,
+      strategy: "max1_plus_second",
+      threshold: 0.55,
+      max_per_pr: 2,
+      total_budget: 85,
+      second_min_source_count: 2,
+      second_min_posterior: 0.0,
+      require_qualified_triad: true,
+      eligible_for_promotion: false,
+      diagnostic: true,
+      hypothesis:
+        "Diagnostic upper-recall policy; reject if precision falls below the leaderboard floor."
     },
     %{
       id: "posterior-max1-plus-source5-unbudgeted-diagnostic",
@@ -114,9 +176,17 @@ defmodule Sugary.PCRSEnsemblePublisher do
     baseline = baseline_report(baseline_run, cases)
     case_pools = Enum.map(cases, &case_pool(&1, sources))
     pool_report = candidate_pool_report(case_pools)
-    policy_reports = Enum.map(@policies, &policy_report(&1, case_pools))
+
+    policy_reports =
+      Enum.map(@policies, &policy_report(&1, case_pools, pool_report.expected_claims))
+
     winner = choose_winner(policy_reports, baseline)
     leave_repo_out = repo_group_generalization(winner, baseline)
+    repo_group_deltas = repo_group_deltas(policy_reports, baseline)
+    frontier = frontier_report(policy_reports, baseline, pool_report)
+    bootstrap = bootstrap_report(policy_reports, baseline)
+    suppressed_true_positives = suppressed_true_positive_report(policy_reports)
+    admitted_false_positives = admitted_false_positive_report(policy_reports)
     calibration = calibration_report(case_pools, winner)
     decision = decision(winner, baseline, pool_report, leave_repo_out)
 
@@ -134,6 +204,11 @@ defmodule Sugary.PCRSEnsemblePublisher do
         policies: policy_reports,
         winner: winner,
         leave_repo_out: leave_repo_out,
+        repo_group_deltas: repo_group_deltas,
+        frontier: frontier,
+        bootstrap: bootstrap,
+        suppressed_true_positives: suppressed_true_positives,
+        admitted_false_positives: admitted_false_positives,
         calibration: calibration,
         decision: decision
       }
@@ -386,7 +461,7 @@ defmodule Sugary.PCRSEnsemblePublisher do
     |> clamp()
   end
 
-  defp policy_report(policy, case_pools) do
+  defp policy_report(policy, case_pools, expected_total) do
     selected = selected_candidate_ids(case_pools, policy)
     results = Enum.map(case_pools, &policy_case_result(&1, policy, selected))
     score = score(policy.id, results)
@@ -397,6 +472,7 @@ defmodule Sugary.PCRSEnsemblePublisher do
       policy: policy,
       score: score,
       usefulness_adjusted_f1: uaf1(score),
+      theoretical_max_f1_at_budget: theoretical_max_f1(policy, expected_total),
       results: results,
       per_case: per_case,
       recall_at_budget: recall_at_budget(case_pools, policy, selected),
@@ -406,6 +482,11 @@ defmodule Sugary.PCRSEnsemblePublisher do
       admitted_fp: score.noise,
       calibration: calibration_buckets(results)
     }
+  end
+
+  defp theoretical_max_f1(policy, expected_total) do
+    budget = min(Map.get(policy, :total_budget, 0), expected_total)
+    ratio(2 * budget, expected_total + budget)
   end
 
   defp policy_case_result(case_pool, policy, selected) do
@@ -669,6 +750,281 @@ defmodule Sugary.PCRSEnsemblePublisher do
     }
   end
 
+  defp repo_group_deltas(policy_reports, baseline) do
+    Map.new(policy_reports, fn report ->
+      {report.id, repo_group_delta_rows(report, baseline)}
+    end)
+  end
+
+  defp repo_group_delta_rows(report, baseline) do
+    base_by_case = Map.new(baseline.per_case, &{&1.case_id, &1})
+
+    report.per_case
+    |> Enum.group_by(& &1.repo_group)
+    |> Enum.map(fn {group, policy_rows} ->
+      score = aggregate_case_rows(policy_rows)
+
+      baseline_rows =
+        policy_rows
+        |> Enum.map(&Map.fetch!(base_by_case, &1.case_id))
+
+      baseline_score = aggregate_case_rows(baseline_rows)
+      policy_uaf1 = score.f1 * score.usefulness
+      baseline_uaf1 = baseline_score.f1 * baseline_score.usefulness
+
+      %{
+        repo_group: group,
+        policy_id: report.id,
+        score: score,
+        baseline: baseline_score,
+        uaf1_delta: policy_uaf1 - baseline_uaf1,
+        f1_delta: score.f1 - baseline_score.f1,
+        hit_delta: score.hits - baseline_score.hits,
+        noise_delta: score.noise - baseline_score.noise,
+        passes: policy_uaf1 >= baseline_uaf1
+      }
+    end)
+    |> Enum.sort_by(& &1.repo_group)
+  end
+
+  defp frontier_report(policy_reports, baseline, pool_report) do
+    v0 = Enum.find(policy_reports, &(&1.id == @v0_policy_id))
+    product_default = best_product_default(policy_reports, v0)
+    leaderboard = best_leaderboard(policy_reports, v0)
+    best_f1 = best_f1(policy_reports)
+
+    budget_tiers =
+      policy_reports
+      |> Enum.group_by(&(Map.get(&1.policy, :budget_tier) || Map.get(&1.policy, :total_budget)))
+      |> Enum.map(fn {budget, reports} ->
+        best = Enum.max_by(reports, & &1.score.f1)
+
+        %{
+          budget: budget,
+          theoretical_max_f1:
+            theoretical_max_f1(%{total_budget: budget}, pool_report.expected_claims),
+          best_policy: policy_summary(best),
+          policies: Enum.map(reports, &policy_summary/1)
+        }
+      end)
+      |> Enum.sort_by(& &1.budget)
+
+    %{
+      objective: "budget_f1_pareto_frontier",
+      baseline: score_summary("team-ev-max-2", baseline.score),
+      v0_policy_id: @v0_policy_id,
+      v0: if(v0, do: policy_summary(v0), else: nil),
+      product_default: if(product_default, do: policy_summary(product_default), else: nil),
+      leaderboard_candidate: if(leaderboard, do: policy_summary(leaderboard), else: nil),
+      best_f1_policy: if(best_f1, do: policy_summary(best_f1), else: nil),
+      budget_tiers: budget_tiers,
+      decision_rules: %{
+        product_default_retained:
+          product_default != nil and v0 != nil and product_default.id == v0.id and
+            product_default.score.f1 >= v0.score.f1 and
+            uaf1(product_default.score) >= uaf1(v0.score),
+        leaderboard_precision_floor: 0.70,
+        leaderboard_min_f1_delta: 0.02,
+        leaderboard_promoted:
+          leaderboard != nil and v0 != nil and leaderboard.score.precision >= 0.70 and
+            leaderboard.score.f1 >= v0.score.f1 + 0.02
+      },
+      no_official_score_claim: true
+    }
+  end
+
+  defp best_product_default(policy_reports, v0) do
+    policy_reports
+    |> Enum.reject(&diagnostic?/1)
+    |> Enum.filter(&(Map.get(&1.policy, :budget_tier, Map.get(&1.policy, :total_budget)) <= 52))
+    |> Enum.filter(fn report ->
+      is_nil(v0) or (report.score.f1 >= v0.score.f1 and uaf1(report.score) >= uaf1(v0.score))
+    end)
+    |> Enum.max_by(&{uaf1(&1.score), &1.score.f1, &1.score.precision}, fn -> v0 end)
+  end
+
+  defp best_leaderboard(policy_reports, v0) do
+    policy_reports
+    |> Enum.reject(&diagnostic?/1)
+    |> Enum.filter(&(Map.get(&1.policy, :budget_tier, Map.get(&1.policy, :total_budget)) > 52))
+    |> Enum.filter(&(&1.score.precision >= 0.70))
+    |> Enum.filter(fn report -> is_nil(v0) or report.score.f1 >= v0.score.f1 + 0.02 end)
+    |> Enum.max_by(&{&1.score.f1, uaf1(&1.score), &1.score.hits, -&1.score.noise}, fn -> nil end)
+  end
+
+  defp best_f1(policy_reports) do
+    policy_reports
+    |> Enum.reject(&diagnostic?/1)
+    |> Enum.max_by(&{&1.score.f1, uaf1(&1.score), &1.score.precision}, fn -> nil end)
+  end
+
+  defp diagnostic?(report), do: Map.get(report.policy, :diagnostic, false) == true
+
+  defp policy_summary(nil), do: nil
+
+  defp policy_summary(report) do
+    report
+    |> Map.take([
+      :id,
+      :usefulness_adjusted_f1,
+      :theoretical_max_f1_at_budget,
+      :recall_at_budget,
+      :suppressed_tp,
+      :admitted_fp
+    ])
+    |> Map.put(:mode, Map.get(report.policy, :mode))
+    |> Map.put(
+      :budget_tier,
+      Map.get(report.policy, :budget_tier, Map.get(report.policy, :total_budget))
+    )
+    |> Map.put(:score, score_summary(report.id, report.score))
+  end
+
+  defp score_summary(id, score) do
+    %{
+      id: id,
+      f1: score.f1,
+      usefulness_adjusted_f1: uaf1(score),
+      precision: score.precision,
+      recall: score.recall,
+      hits: score.hits,
+      noise: score.noise,
+      comments: score.published_claims,
+      avg_comments_per_pr: score.avg_comments_per_pr,
+      snr: score.snr
+    }
+  end
+
+  defp bootstrap_report(policy_reports, baseline) do
+    v0 = Enum.find(policy_reports, &(&1.id == @v0_policy_id))
+
+    Map.new(policy_reports, fn report ->
+      {report.id,
+       %{
+         vs_team_ev_max_2: bootstrap_delta(report.per_case, baseline.per_case),
+         vs_v0:
+           if(v0 && v0.id != report.id,
+             do: bootstrap_delta(report.per_case, v0.per_case),
+             else: bootstrap_zero()
+           )
+       }}
+    end)
+  end
+
+  defp bootstrap_delta(rows, baseline_rows) do
+    count = length(rows)
+    rows_by_case = Map.new(rows, &{&1.case_id, &1})
+    baseline_by_case = Map.new(baseline_rows, &{&1.case_id, &1})
+    case_ids = Map.keys(rows_by_case) |> Enum.sort()
+
+    :rand.seed(:exsplus, {101, 102, 103})
+
+    deltas =
+      Enum.map(1..@bootstrap_samples, fn _index ->
+        sample_ids = Enum.map(1..count, fn _ -> Enum.at(case_ids, :rand.uniform(count) - 1) end)
+        sampled_rows = Enum.map(sample_ids, &Map.fetch!(rows_by_case, &1))
+        sampled_baseline = Enum.map(sample_ids, &Map.fetch!(baseline_by_case, &1))
+        sampled_score = aggregate_case_rows(sampled_rows)
+        sampled_baseline_score = aggregate_case_rows(sampled_baseline)
+
+        %{
+          f1: sampled_score.f1 - sampled_baseline_score.f1,
+          usefulness_adjusted_f1:
+            sampled_score.f1 * sampled_score.usefulness -
+              sampled_baseline_score.f1 * sampled_baseline_score.usefulness,
+          precision: sampled_score.precision - sampled_baseline_score.precision,
+          recall: sampled_score.recall - sampled_baseline_score.recall
+        }
+      end)
+
+    %{
+      samples: @bootstrap_samples,
+      f1_delta: interval(deltas, :f1),
+      usefulness_adjusted_f1_delta: interval(deltas, :usefulness_adjusted_f1),
+      precision_delta: interval(deltas, :precision),
+      recall_delta: interval(deltas, :recall)
+    }
+  end
+
+  defp bootstrap_zero do
+    zero = %{p025: 0.0, p50: 0.0, p975: 0.0}
+
+    %{
+      samples: @bootstrap_samples,
+      f1_delta: zero,
+      usefulness_adjusted_f1_delta: zero,
+      precision_delta: zero,
+      recall_delta: zero
+    }
+  end
+
+  defp interval(deltas, key) do
+    values = deltas |> Enum.map(&Map.fetch!(&1, key)) |> Enum.sort()
+
+    %{
+      p025: percentile(values, 0.025),
+      p50: percentile(values, 0.5),
+      p975: percentile(values, 0.975)
+    }
+  end
+
+  defp percentile([], _p), do: 0.0
+
+  defp percentile(values, p) do
+    index = round((length(values) - 1) * p)
+    Enum.at(values, index)
+  end
+
+  defp suppressed_true_positive_report(policy_reports) do
+    Map.new(policy_reports, fn report ->
+      {report.id,
+       report.results
+       |> Enum.flat_map(&suppressed_true_positive_rows/1)
+       |> Enum.uniq_by(&{&1.case_id, &1.expected_id})
+       |> Enum.sort_by(& &1.posterior, :desc)}
+    end)
+  end
+
+  defp suppressed_true_positive_rows(result) do
+    published_ids =
+      result.final_claims
+      |> Enum.filter(&(&1.publish_decision == "publish"))
+      |> MapSet.new(& &1.id)
+
+    result.candidate_claims
+    |> Enum.reject(&MapSet.member?(published_ids, &1.id))
+    |> Enum.filter(& &1.expected_id)
+    |> Enum.map(&diagnostic_claim_row(result.case, &1))
+  end
+
+  defp admitted_false_positive_report(policy_reports) do
+    Map.new(policy_reports, fn report ->
+      {report.id,
+       report.results
+       |> Enum.flat_map(fn result ->
+         result.final_claims
+         |> Enum.filter(&(&1.publish_decision == "publish"))
+         |> Enum.reject(& &1.expected_id)
+         |> Enum.map(&diagnostic_claim_row(result.case, &1))
+       end)
+       |> Enum.sort_by(& &1.posterior, :desc)}
+    end)
+  end
+
+  defp diagnostic_claim_row(bench_case, claim) do
+    %{
+      case_id: bench_case.id,
+      repo_group: repo_group(bench_case),
+      claim_id: claim.id,
+      expected_id: claim.expected_id,
+      path: field(claim, :path),
+      claim: claim.claim,
+      posterior: claim.posterior,
+      source_ids: claim.source_ids,
+      features: claim.features
+    }
+  end
+
   defp aggregate_case_rows(rows) do
     totals =
       Enum.reduce(
@@ -709,8 +1065,8 @@ defmodule Sugary.PCRSEnsemblePublisher do
       checks: checks,
       reason:
         if(passed,
-          do: "PCRS Ensemble Publisher v0 cleared all no-key local proxy gates.",
-          else: "PCRS Ensemble Publisher v0 did not clear all no-key local proxy gates."
+          do: "PCRS Ensemble Publisher frontier cleared the no-key local proxy gates.",
+          else: "PCRS Ensemble Publisher frontier did not clear all no-key local proxy gates."
         )
     }
   end
@@ -767,8 +1123,28 @@ defmodule Sugary.PCRSEnsemblePublisher do
     write_candidate_details!(out_dir, data.policies)
     Sugary.Json.write!(Path.join(out_dir, "policy-scorecards.json"), report_policies)
     Sugary.Json.write!(Path.join(out_dir, "leave-repo-out.json"), data.leave_repo_out)
+    Sugary.Json.write!(Path.join(out_dir, "repo-group-deltas.json"), data.repo_group_deltas)
+    Sugary.Json.write!(Path.join(out_dir, "budget-frontier.json"), data.frontier)
+    Sugary.Json.write!(Path.join(out_dir, "bootstrap.json"), data.bootstrap)
+
+    Sugary.Json.write!(
+      Path.join(out_dir, "suppressed-true-positives.json"),
+      data.suppressed_true_positives
+    )
+
+    Sugary.Json.write!(
+      Path.join(out_dir, "admitted-false-positives.json"),
+      data.admitted_false_positives
+    )
+
+    Sugary.Json.write!(
+      Path.join(out_dir, "calibration-by-policy.json"),
+      Map.new(data.policies, &{&1.id, &1.calibration})
+    )
+
     Sugary.Json.write!(Path.join(out_dir, "calibration.json"), data.calibration)
     Sugary.Json.write!(Path.join(out_dir, "decision.json"), data.decision)
+    write_policy_claims!(out_dir, data.policies)
 
     if data.winner do
       write_winner_claims!(out_dir, data.winner)
@@ -828,6 +1204,22 @@ defmodule Sugary.PCRSEnsemblePublisher do
     end)
   end
 
+  defp write_policy_claims!(out_dir, policies) do
+    Enum.each(policies, fn policy ->
+      Enum.each(policy.results, fn result ->
+        Sugary.Json.write!(
+          Path.join([out_dir, "claims", "#{policy.id}--#{result.case.id}.json"]),
+          result.final_claims
+        )
+
+        Sugary.Json.write!(
+          Path.join([out_dir, policy.id, "claims", "#{result.case.id}.json"]),
+          result.final_claims
+        )
+      end)
+    end)
+  end
+
   defp render_report(data, winner, policy_reports) do
     baseline = data.baseline.score
 
@@ -836,7 +1228,34 @@ defmodule Sugary.PCRSEnsemblePublisher do
       |> Enum.map(fn report ->
         score = report.score
 
-        "| #{report.id} | #{fmt(score.f1)} | #{fmt(report.usefulness_adjusted_f1)} | #{score.hits} | #{score.noise} | #{score.published_claims} | #{fmt(score.avg_comments_per_pr)} | #{fmt(report.recall_at_budget.recall)} | #{report.suppressed_tp} | #{report.admitted_fp} |"
+        "| #{report.id} | #{Map.get(report.policy, :mode, "candidate")} | #{Map.get(report.policy, :budget_tier, Map.get(report.policy, :total_budget))} | #{fmt(score.f1)} | #{fmt(report.theoretical_max_f1_at_budget)} | #{fmt(report.usefulness_adjusted_f1)} | #{fmt(score.precision)} | #{fmt(score.recall)} | #{score.hits} | #{score.noise} | #{score.published_claims} | #{fmt(score.avg_comments_per_pr)} | #{fmt(report.recall_at_budget.recall)} | #{report.suppressed_tp} | #{report.admitted_fp} |"
+      end)
+      |> Enum.join("\n")
+
+    frontier_rows =
+      data.frontier.budget_tiers
+      |> Enum.map(fn tier ->
+        best = tier.best_policy
+        score = best.score
+
+        "| #{tier.budget} | #{fmt(tier.theoretical_max_f1)} | #{best.id} | #{fmt(score.f1)} | #{fmt(score.precision)} | #{fmt(score.recall)} | #{score.hits} | #{score.noise} | #{score.comments} |"
+      end)
+      |> Enum.join("\n")
+
+    bootstrap_rows =
+      [
+        data.frontier.product_default,
+        data.frontier.leaderboard_candidate,
+        data.frontier.best_f1_policy
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq_by(& &1.id)
+      |> Enum.map(fn summary ->
+        bootstrap = Map.fetch!(data.bootstrap, summary.id)
+        vs_baseline = bootstrap.vs_team_ev_max_2.usefulness_adjusted_f1_delta
+        vs_v0 = bootstrap.vs_v0.usefulness_adjusted_f1_delta
+
+        "| #{summary.id} | #{fmt(vs_baseline.p50)} [#{fmt(vs_baseline.p025)}, #{fmt(vs_baseline.p975)}] | #{fmt(vs_v0.p50)} [#{fmt(vs_v0.p025)}, #{fmt(vs_v0.p975)}] |"
       end)
       |> Enum.join("\n")
 
@@ -853,7 +1272,7 @@ defmodule Sugary.PCRSEnsemblePublisher do
       |> Enum.join("\n")
 
     """
-    # PCRS Ensemble Publisher v0
+    # PCRS Ensemble Publisher Frontier
 
     No Martian API key was used. This is a no-key local proxy report, not an official Martian score.
 
@@ -873,11 +1292,25 @@ defmodule Sugary.PCRSEnsemblePublisher do
     - Candidate-pool oracle recall: #{fmt(data.pool_report.oracle_recall)}
     - Pool hits: #{data.pool_report.pool_hits}/#{data.pool_report.expected_claims}
 
+    ## Budget Frontier
+
+    | Budget | Max Possible F1 | Best Policy | F1 | Precision | Recall | Hits | Noise | Comments |
+    | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+    #{frontier_rows}
+
     ## Policies
 
-    | Policy | F1 | UAF1 | Hits | Noise | Comments | Avg Comments/PR | Recall@Budget | Suppressed TP | Admitted FP |
-    | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+    | Policy | Mode | Budget | F1 | Max F1 | UAF1 | Precision | Recall | Hits | Noise | Comments | Avg Comments/PR | Recall@Budget | Suppressed TP | Admitted FP |
+    | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
     #{policy_rows}
+
+    ## Bootstrap
+
+    Paired bootstrap over cases. Intervals show UAF1 delta p50 [p025, p975].
+
+    | Policy | vs team-ev-max-2 | vs v0 |
+    | --- | ---: | ---: |
+    #{bootstrap_rows}
 
     ## Repo Group Generalization
 
