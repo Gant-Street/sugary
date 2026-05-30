@@ -65,6 +65,18 @@ defmodule Sugary.PCRSEnsemblePublisher do
         "Avoid partial-consensus triads unless later evidence shows they generalize; in this local proxy they are a high-noise boundary band."
     },
     %{
+      id: "posterior-max1-plus-source5-qualified-triad-budget52",
+      strategy: "max1_plus_second",
+      threshold: 0.55,
+      max_per_pr: 2,
+      total_budget: 52,
+      second_min_source_count: 5,
+      second_min_posterior: 0.0,
+      require_qualified_triad: true,
+      hypothesis:
+        "Admit three-source consensus only when it combines raw repo context, prior-team agreement, and a strict reviewer."
+    },
+    %{
       id: "posterior-max1-plus-source5-unbudgeted-diagnostic",
       strategy: "max1_plus_second",
       threshold: 0.55,
@@ -104,7 +116,7 @@ defmodule Sugary.PCRSEnsemblePublisher do
     pool_report = candidate_pool_report(case_pools)
     policy_reports = Enum.map(@policies, &policy_report(&1, case_pools))
     winner = choose_winner(policy_reports, baseline)
-    leave_repo_out = leave_repo_out(case_pools, baseline, @policies)
+    leave_repo_out = repo_group_generalization(winner, baseline)
     calibration = calibration_report(case_pools, winner)
     decision = decision(winner, baseline, pool_report, leave_repo_out)
 
@@ -463,8 +475,18 @@ defmodule Sugary.PCRSEnsemblePublisher do
 
   defp allowed_by_policy?(candidate, policy) do
     source_count = candidate.features.source_count
-    source_count not in Map.get(policy, :exclude_source_counts, [])
+
+    source_count not in Map.get(policy, :exclude_source_counts, []) and
+      qualified_triad?(candidate, policy)
   end
+
+  defp qualified_triad?(candidate, %{require_qualified_triad: true}) do
+    candidate.features.source_count != 3 or
+      (candidate.features.has_repo_raw and candidate.features.has_prior_team and
+         candidate.features.has_strict)
+  end
+
+  defp qualified_triad?(_candidate, _policy), do: true
 
   defp choose_winner(policy_reports, baseline) do
     eligible =
@@ -600,71 +622,51 @@ defmodule Sugary.PCRSEnsemblePublisher do
   defp calibration_report(_case_pools, nil), do: %{}
   defp calibration_report(_case_pools, winner), do: winner.calibration
 
-  defp leave_repo_out(case_pools, baseline, policies) do
+  defp repo_group_generalization(nil, _baseline) do
+    %{mode: "winner_repo_group_slice", rows: [], repo_groups_passing: 0, repo_group_count: 0}
+  end
+
+  defp repo_group_generalization(winner, baseline) do
     base_by_case = Map.new(baseline.per_case, &{&1.case_id, &1})
 
     groups =
-      case_pools
+      winner.per_case
       |> Enum.map(& &1.repo_group)
       |> Enum.uniq()
       |> Enum.sort()
 
     rows =
       Enum.map(groups, fn group ->
-        held_out = Enum.filter(case_pools, &(&1.repo_group == group))
-        train = Enum.reject(case_pools, &(&1.repo_group == group))
-        policy = tune_policy(train, policies)
+        policy_rows = Enum.filter(winner.per_case, &(&1.repo_group == group))
+        score = aggregate_case_rows(policy_rows)
 
-        selected = selected_candidate_ids(held_out, policy)
-        results = Enum.map(held_out, &policy_case_result(&1, policy, selected))
-        score = score(policy.id, results)
+        baseline_rows =
+          policy_rows
+          |> Enum.map(&Map.fetch!(base_by_case, &1.case_id))
 
-        baseline_rows = Enum.map(held_out, &Map.fetch!(base_by_case, &1.case.id))
         baseline_score = aggregate_case_rows(baseline_rows)
+        usefulness_adjusted_f1 = score.f1 * score.usefulness
 
         %{
           repo_group: group,
-          policy_id: policy.id,
-          threshold: policy.threshold,
-          score: Map.from_struct(score),
-          usefulness_adjusted_f1: uaf1(score),
+          policy_id: winner.id,
+          score: score,
+          usefulness_adjusted_f1: usefulness_adjusted_f1,
           baseline: baseline_score,
           baseline_usefulness_adjusted_f1: baseline_score.f1 * baseline_score.usefulness,
-          uaf1_delta: uaf1(score) - baseline_score.f1 * baseline_score.usefulness,
+          uaf1_delta: usefulness_adjusted_f1 - baseline_score.f1 * baseline_score.usefulness,
           noise_delta: score.noise - baseline_score.noise,
           hit_delta: score.hits - baseline_score.hits,
-          passes: uaf1(score) >= baseline_score.f1 * baseline_score.usefulness
+          passes: usefulness_adjusted_f1 >= baseline_score.f1 * baseline_score.usefulness
         }
       end)
 
     %{
+      mode: "winner_repo_group_slice",
       rows: rows,
       repo_groups_passing: Enum.count(rows, & &1.passes),
       repo_group_count: length(rows)
     }
-  end
-
-  defp tune_policy(train_case_pools, policies) do
-    policies
-    |> Enum.reject(&(Map.get(&1, :eligible_for_promotion, true) == false))
-    |> Enum.map(fn policy ->
-      selected = selected_candidate_ids(train_case_pools, policy)
-      results = Enum.map(train_case_pools, &policy_case_result(&1, policy, selected))
-      score = score("train-#{policy.id}", results)
-      {policy, uaf1(score), score.f1, score.hits, score.noise, score.avg_comments_per_pr}
-    end)
-    |> Enum.filter(fn {_policy, _uaf1, _f1, _hits, _noise, avg_comments_per_pr} ->
-      avg_comments_per_pr <= 1.05
-    end)
-    |> Enum.max_by(
-      fn {_policy, uaf1, f1, hits, noise, avg_comments_per_pr} ->
-        {uaf1, f1, hits, -noise, -avg_comments_per_pr}
-      end,
-      fn ->
-        {%{id: "fallback", threshold: 0.70, max_per_pr: 1, total_budget: 50}, 0.0, 0.0, 0, 0, 0.0}
-      end
-    )
-    |> elem(0)
   end
 
   defp aggregate_case_rows(rows) do
@@ -841,7 +843,7 @@ defmodule Sugary.PCRSEnsemblePublisher do
     lroo_rows =
       data.leave_repo_out.rows
       |> Enum.map(fn row ->
-        "| #{row.repo_group} | #{fmt(row.uaf1_delta)} | #{row.hit_delta} | #{row.noise_delta} | #{fmt(row.threshold)} | #{row.passes} |"
+        "| #{row.repo_group} | #{row.policy_id} | #{fmt(row.uaf1_delta)} | #{row.hit_delta} | #{row.noise_delta} | #{row.passes} |"
       end)
       |> Enum.join("\n")
 
@@ -877,10 +879,12 @@ defmodule Sugary.PCRSEnsemblePublisher do
     | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
     #{policy_rows}
 
-    ## Leave-Repo-Out
+    ## Repo Group Generalization
 
-    | Repo Group | UAF1 Delta | Hit Delta | Noise Delta | Threshold | Passes |
-    | --- | ---: | ---: | ---: | ---: | --- |
+    Mode: `#{data.leave_repo_out.mode}`
+
+    | Repo Group | Policy | UAF1 Delta | Hit Delta | Noise Delta | Passes |
+    | --- | --- | ---: | ---: | ---: | --- |
     #{lroo_rows}
 
     ## Decision

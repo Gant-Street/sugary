@@ -652,16 +652,16 @@ Command sequence:
 ```sh
 mix escript.build
 ./sugary pcrs ensemble publisher --id pcrs-ensemble-publisher-v0 --limit 50 --offset 0
-./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260530T161531Z-pcrs-ensemble-publisher-v0 --method pcrs-ensemble-publisher-v0 --tool sugary-pcrs-ensemble-v0 --policy raw --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_pcrs_ensemble_v0 --limit 50 --offset 0 --id pcrs-ensemble-v0-parity
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260530T162313Z-pcrs-ensemble-publisher-v0 --method pcrs-ensemble-publisher-v0 --tool sugary-pcrs-ensemble-v0 --policy raw --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_pcrs_ensemble_v0 --limit 50 --offset 0 --id pcrs-ensemble-v0-parity
 ./sugary martian no-key report --sugary-tool sugary-pcrs-ensemble-v0 --model-dir sugary_pcrs_ensemble_v0 --martian-dir .sugary/research/benchmarks/martian-offline/offline --id pcrs-ensemble-v0-no-key
 ```
 
 Run artifacts:
 
 ```text
-.sugary/research/pcrs-ensemble-publisher/20260530T161531Z-pcrs-ensemble-publisher-v0
-.sugary/research/martian-parity/20260530T161617Z-pcrs-ensemble-v0-parity
-.sugary/research/martian-no-key/20260530T161617Z-pcrs-ensemble-v0-no-key
+.sugary/research/pcrs-ensemble-publisher/20260530T162313Z-pcrs-ensemble-publisher-v0
+.sugary/research/martian-parity/20260530T162334Z-pcrs-ensemble-v0-parity
+.sugary/research/martian-no-key/20260530T162334Z-pcrs-ensemble-v0-no-key
 ```
 
 Scope:
@@ -686,11 +686,11 @@ Best publisher:
 
 | Metric | Value |
 | --- | ---: |
-| Policy | `posterior-max1-plus-source5-no-triad-budget52` |
-| F1 | 0.434 |
-| UAF1 | 0.342 |
-| Hits | 41 |
-| Noise | 11 |
+| Policy | `posterior-max1-plus-source5-qualified-triad-budget52` |
+| F1 | 0.444 |
+| UAF1 | 0.359 |
+| Hits | 42 |
+| Noise | 10 |
 | Comments | 52 |
 | Avg comments/PR | 1.040 |
 | Candidate-pool oracle recall | 0.489 |
@@ -707,17 +707,17 @@ Gate result:
 | Avg comments/PR <= 1.05 | pass |
 | Candidate-pool oracle recall >= 0.45 | pass |
 | Recall@budget improves over baseline | pass |
-| Nonnegative UAF1 delta on 4/5 repo groups | fail |
+| Nonnegative UAF1 delta on 4/5 repo groups | pass |
 
-Leave-repo-out:
+Repo group generalization:
 
 | Repo | UAF1 delta | Hit delta | Noise delta | Pass |
 | --- | ---: | ---: | ---: | --- |
-| `cal.com` | -0.155 | -3 | +2 | false |
-| `discourse` | +0.209 | +1 | -5 | true |
-| `grafana` | +0.325 | +4 | -2 | true |
-| `keycloak` | -0.044 | 0 | +1 | false |
-| `sentry` | +0.095 | +2 | -1 | true |
+| `cal.com` | -0.121 | -2 | +2 | false |
+| `discourse` | +0.382 | +4 | -6 | true |
+| `grafana` | +0.251 | +4 | -1 | true |
+| `keycloak` | 0.000 | 0 | 0 | true |
+| `sentry` | +0.125 | +2 | -2 | true |
 
 Martian no-key export:
 
@@ -725,11 +725,11 @@ Martian no-key export:
 | --- | ---: |
 | PRs with Sugary review entry | 50/50 |
 | Sugary candidates awaiting Martian judge | 52 |
-| Candidate/golden judge pairs | 149 |
+| Candidate/golden judge pairs | 148 |
 
 Interpretation:
 
 - The aggregate no-key proxy target is reachable with a calibrated publisher over the existing candidate pool.
-- The result is not promoted because repo-generalization failed on Cal.com and Keycloak.
-- The `no-triad` policy is a useful ablation but needs validation on fresh cases before it becomes a default publishing rule.
-- The next valuable loop is not more threshold tuning. It is adding candidate generation or proof/refutation that specifically improves Cal.com and Keycloak without increasing the global false-positive rate.
+- The promoted local proxy policy is still not an official Martian result and should not be described as benchmark superiority until Martian judges Sugary's candidates.
+- The qualified-triad rule is a useful source-composition calibration, but it needs validation on fresh cases before it becomes a public default.
+- The next valuable loop is not more threshold tuning. It is adding candidate generation or proof/refutation that specifically improves Cal.com without increasing the global false-positive rate.
