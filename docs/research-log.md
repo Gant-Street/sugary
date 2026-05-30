@@ -430,3 +430,103 @@ B: same Codex model, same prompt budget, plus read-only repo navigator transcrip
 ```
 
 Promotion should require higher F1 or usefulness-adjusted F1, no usefulness/SNR regression, no added noise, paired wins over losses, and latency within a fixed budget.
+
+## 2026-05-30: Martian Autoresearch 50-Case Loop v0
+
+Command sequence:
+
+```sh
+./sugary repo materialize --suite martian-offline --limit 50 --offset 0 --mode fetch
+./sugary architecture gauntlet gauntlets/martian-autoresearch-50-v0.toml --replay-mode cache-first
+./sugary scientific pilot --experiment experiments/martian-autoresearch-v0.toml --candidate pcrs-codex-repo-low-strict --baseline codex-gpt-5.5-low --limit 50 --offset 0 --replay-mode cache-first --min-cases 50 --bootstrap-iterations 500 --primary-metric usefulness_adjusted_f1 --min-primary-delta 0.05 --max-added-comments-per-pr 0 --min-snr-ratio 0.9 --max-added-noise 0 --id martian-autoresearch-strict-pilot-v0
+mix run -e 'IO.puts(Sugary.RankingPolicyAblation.run!(source_run: ".sugary/research/runs/20260530T032918Z-martian-autoresearch-50-v0-experiment", method_id: "pcrs-codex-repo-low-strict", baselines: ["codex-gpt-5.5-low"], suite: "martian-offline", limit: 50, offset: 0, id: "martian-autoresearch-ranking-budget-uaf1-v0", min_uaf1_delta: 0.05))'
+mix run -e 'IO.puts(Sugary.RankingPolicyAblation.run!(source_run: ".sugary/research/runs/20260530T072359Z-martian-autoresearch-v0", method_id: "pcrs-codex-repo-low-strict", baselines: ["codex-gpt-5.5-low"], suite: "martian-offline", limit: 50, offset: 0, id: "martian-autoresearch-ranking-budget-repeat-uaf1-v0", min_uaf1_delta: 0.05))'
+```
+
+Run artifacts:
+
+```text
+.sugary/research/repo-materializations/20260530T032351Z-repo-materialization-v0
+.sugary/research/architecture-gauntlets/20260530T032917Z-martian-autoresearch-50-v0
+.sugary/research/runs/20260530T032918Z-martian-autoresearch-50-v0-experiment
+.sugary/research/scientific-pilots/20260530T082402Z-martian-autoresearch-strict-pilot-v0
+.sugary/research/runs/20260530T082559Z-martian-autoresearch-ranking-budget-uaf1-v0
+.sugary/research/runs/20260530T082559Z-martian-autoresearch-ranking-budget-repeat-uaf1-v0
+```
+
+Scope:
+
+- Benchmark: Martian Code Review Bench offline, local smoke only.
+- Cases: 50 materialized Martian cases.
+- Golden comments: 137.
+- Repositories: Discourse, Sentry, Cal.com, Grafana, Keycloak, and Sentry Greptile mirror cases.
+- Workspace readiness: 50/50 base/head workspaces materialized with exact changed-file parity.
+- Official score: no.
+- Leaderboard claim: no.
+- Live model calls: yes. The loop intentionally used Codex CLI through Sugary's command boundary.
+
+Architecture gauntlet result:
+
+| Method | F1 | UAF1 | Recall | Usefulness | SNR | Hits | Noise | Avg comments/PR | Decision |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `codex-gpt-5.5-low` | 0.305 | 0.152 | 0.219 | 0.500 | 1.000 | 30 | 30 | 1.200 | reference |
+| `codex-gpt-5.5-repo-low` | 0.277 | 0.129 | 0.197 | 0.466 | 0.871 | 27 | 31 | 1.160 | quarantine |
+| `pcrs-codex-proof-low` | 0.330 | 0.173 | 0.241 | 0.524 | 1.100 | 33 | 30 | 1.260 | keep |
+| `pcrs-codex-repo-low` | 0.379 | 0.214 | 0.285 | 0.565 | 1.300 | 39 | 30 | 1.380 | keep |
+| `pcrs-codex-repo-low-strict` | 0.362 | 0.210 | 0.263 | 0.581 | 1.385 | 36 | 26 | 1.240 | keep |
+| `martian-pcrs-repo-plus-codex-low` | 0.370 | 0.161 | 0.321 | 0.436 | 0.772 | 44 | 57 | 2.020 | quarantine |
+
+Strict scientific pilot repeat:
+
+| Method | F1 | UAF1 | Recall | Usefulness | SNR | Hits | Noise | Avg comments/PR |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-low` | 0.297 | 0.149 | 0.212 | 0.500 | 1.000 | 29 | 29 | 1.160 |
+| `pcrs-codex-repo-low-strict` | 0.355 | 0.207 | 0.255 | 0.583 | 1.400 | 35 | 25 | 1.200 |
+
+Scientific pilot decision:
+
+- Aggregate UAF1 delta: +0.0586.
+- Hits: +6.
+- Noise: -4.
+- SNR: +0.400.
+- Published claims: +2 over 50 PRs.
+- Bootstrap UAF1 delta estimate: +0.0733 with interval [-0.0066, 0.1567].
+- Decision: reject for promotion-grade claim because the paired confidence interval crossed zero.
+
+Ranking-budget result on the gauntlet capture:
+
+| Policy | F1 | UAF1 | Recall | Usefulness | SNR | Hits | Noise | Avg comments/PR | Decision |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `codex-gpt-5.5-low` | 0.305 | 0.152 | 0.219 | 0.500 | 1.000 | 30 | 30 | 1.200 | baseline |
+| `team-ev-max-1` | 0.311 | 0.203 | 0.204 | 0.651 | 1.867 | 28 | 15 | 0.860 | promoted for next locked check |
+
+Ranking-budget repeat result:
+
+| Policy | F1 | UAF1 | Recall | Usefulness | SNR | Hits | Noise | Avg comments/PR | Decision |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `codex-gpt-5.5-low` | 0.297 | 0.149 | 0.212 | 0.500 | 1.000 | 29 | 29 | 1.160 | baseline |
+| `team-ev-max-2` | 0.362 | 0.241 | 0.248 | 0.667 | 2.000 | 34 | 17 | 1.020 | promoted for next locked check |
+
+Interpretation:
+
+- Raw repo access alone was negative at low reasoning. It lowered F1, usefulness, and SNR while increasing latency.
+- PCRS structure without repo access was directionally positive but did not clear the stretch target.
+- PCRS plus materialized repo context produced the strongest raw lift, but the non-strict variant published too many comments.
+- Strict PCRS plus repo context repeatedly improved aggregate UAF1, SNR, usefulness, hits, and noise, but the live strict reviewer still published slightly more comments than the baseline.
+- Replay ranking-budget policies fixed the comment budget on both captured samples. The best policy changed between samples (`team-ev-max-1` then `team-ev-max-2`), which means the exact threshold is not yet stable enough to call production-ready.
+- The team composition found more hits but added too much noise. It should not be promoted.
+
+Conclusion:
+
+The loop hit the aggregate stretch target only after adding a ranking-budget layer over strict PCRS repo claims. This is real local evidence for the PCRS thesis, but it is not a general validation and not an official benchmark claim.
+
+Next research move:
+
+Lock the strict PCRS repo candidate plus an explicit budgeted ranking policy, then evaluate it on a fresh Martian slice or a refreshed public benchmark source. Promotion should require:
+
+- UAF1 delta >= +0.05.
+- SNR no worse than baseline.
+- Average comments per PR no higher than baseline.
+- No added net noise.
+- At least one unique true positive.
+- Paired bootstrap interval not crossing zero, or enough additional cases to explain why the interval is still underpowered.

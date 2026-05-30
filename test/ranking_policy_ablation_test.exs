@@ -129,7 +129,26 @@ defmodule Sugary.RankingPolicyAblationTest do
 
       report = File.read!(Path.join(out_dir, "report.md"))
       assert report =~ "Ranking Policy Ablation v1"
+      assert report =~ "UAF1"
       assert report =~ "team-ev-max-1"
+
+      blocked_dir =
+        Sugary.RankingPolicyAblation.run!(
+          source_run: source_run,
+          method_id: "candidate",
+          baselines: ["raw-baseline"],
+          limit: 1,
+          id: "ranking-policy-ablation-target-test",
+          min_uaf1_delta: 999.0
+        )
+
+      on_exit(fn -> File.rm_rf(blocked_dir) end)
+
+      blocked_decision = Sugary.Json.read!(Path.join(blocked_dir, "decision.json"))
+      assert blocked_decision["decision"] == "no_policy_promoted"
+
+      [blocked_policy | _] = Sugary.Json.read!(Path.join(blocked_dir, "policy-scorecards.json"))
+      assert blocked_policy["promotion_guardrails"]["checks"]["uaf1_delta"] == false
     end)
   end
 end

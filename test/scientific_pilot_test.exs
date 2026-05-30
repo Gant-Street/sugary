@@ -79,6 +79,31 @@ defmodule Sugary.ScientificPilotTest do
     assert analysis["sample_diagnostics"]["level"] == "too_small"
   end
 
+  test "pilot can require a minimum primary delta and no added comments" do
+    out_dir =
+      Sugary.ScientificPilot.run!(%{
+        "id" => "scientific-pilot-target-gate-test",
+        "suite" => "local-fixtures",
+        "candidate" => "golden-perfect-reviewer",
+        "baseline" => ["golden-missing-context-reviewer"],
+        "min-cases" => "1",
+        "bootstrap-iterations" => "25",
+        "require-positive-ci" => "false",
+        "min-primary-delta" => "999.0",
+        "max-added-comments-per-pr" => "-1.0"
+      })
+
+    cleanup_run!(out_dir)
+
+    decision = Sugary.Json.read!(Path.join(out_dir, "decision.json"))
+
+    assert decision["decision"] == "reject"
+    assert decision["checks"]["primary_delta_target"] == false
+    assert decision["checks"]["no_added_comments"] == false
+    assert decision["reason"] =~ "primary paired delta missed target"
+    assert decision["reason"] =~ "candidate increased average comments per PR"
+  end
+
   test "pilot can run from an experiment manifest and compare named reports" do
     manifest =
       tmp_file(

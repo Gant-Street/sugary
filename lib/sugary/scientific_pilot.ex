@@ -153,8 +153,11 @@ defmodule Sugary.ScientificPilot do
       bootstrap_iterations: parse_int(Map.get(opts, "bootstrap-iterations", "500")),
       min_snr_ratio: parse_float(Map.get(opts, "min-snr-ratio", "0.9")),
       max_comments_per_pr: parse_float(Map.get(opts, "max-comments-per-pr", "3.0")),
+      max_added_comments_per_pr:
+        parse_float(Map.get(opts, "max-added-comments-per-pr", "999999.0")),
       max_added_noise: parse_float(Map.get(opts, "max-added-noise", "0")),
       min_unique_hits: parse_int(Map.get(opts, "min-unique-hits", "1")),
+      min_primary_delta: parse_float(Map.get(opts, "min-primary-delta", "0.0")),
       primary_metric: Map.get(opts, "primary-metric", "usefulness_adjusted_f1"),
       require_positive_ci: parse_bool(Map.get(opts, "require-positive-ci", true))
     }
@@ -351,13 +354,17 @@ defmodule Sugary.ScientificPilot do
   defp decision(config, candidate, baseline, bootstrap, sample, unique_hits, added_noise) do
     primary = Map.fetch!(bootstrap, String.to_atom(config.primary_metric))
     snr_floor = baseline.score.snr * config.min_snr_ratio
+    aggregate = score_delta(candidate.score, baseline.score)
 
     checks = %{
       enough_cases: sample.enough_cases?,
       positive_primary_delta: Map.get(primary, :estimate, 0.0) > 0,
+      primary_delta_target: Map.get(primary, :estimate, 0.0) >= config.min_primary_delta,
       positive_primary_ci: not config.require_positive_ci or Map.get(primary, :low, 0.0) > 0,
       no_snr_regression: candidate.score.snr >= snr_floor,
       comment_budget: candidate.score.avg_comments_per_pr <= config.max_comments_per_pr,
+      no_added_comments:
+        Map.get(aggregate, :avg_comments_per_pr, 0.0) <= config.max_added_comments_per_pr,
       unique_signal: unique_hits >= config.min_unique_hits,
       no_added_noise: added_noise <= config.max_added_noise
     }
@@ -375,7 +382,7 @@ defmodule Sugary.ScientificPilot do
         %{
           decision: "promote_to_locked_workflow",
           reason:
-            "Candidate beat the best paired baseline with positive #{config.primary_metric} confidence interval while clearing noise, SNR, comment, and unique-signal guardrails.",
+            "Candidate beat the best paired baseline with #{config.primary_metric} delta >= #{config.min_primary_delta} while clearing confidence, noise, SNR, comment, and unique-signal guardrails.",
           checks: checks
         }
 
@@ -391,9 +398,11 @@ defmodule Sugary.ScientificPilot do
   defp rejection_reason(checks) do
     [
       unless(checks.positive_primary_delta, do: "primary paired delta was not positive"),
+      unless(checks.primary_delta_target, do: "primary paired delta missed target"),
       unless(checks.positive_primary_ci, do: "primary paired confidence interval crossed zero"),
       unless(checks.no_snr_regression, do: "SNR regressed beyond allowed ratio"),
       unless(checks.comment_budget, do: "candidate exceeded comment budget"),
+      unless(checks.no_added_comments, do: "candidate increased average comments per PR"),
       unless(checks.unique_signal, do: "candidate added insufficient unique true positives"),
       unless(checks.no_added_noise, do: "candidate added net noise")
     ]

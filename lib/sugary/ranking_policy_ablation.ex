@@ -10,6 +10,7 @@ defmodule Sugary.RankingPolicyAblation do
     offset = Keyword.get(opts, :offset, 0)
     baselines = Keyword.get(opts, :baselines, ["codex-gpt-5.5-xhigh"])
     id = Keyword.get(opts, :id, "ranking-policy-ablation-v1")
+    min_uaf1_delta = Keyword.get(opts, :min_uaf1_delta, 0.0)
 
     cases = Sugary.PublicBenchmarks.load_cases!(suite, limit: limit, offset: offset)
     out_dir = make_run_dir(id)
@@ -26,10 +27,10 @@ defmodule Sugary.RankingPolicyAblation do
         report
         |> Map.put(:paired_vs_current, paired_comparison(report, current))
         |> Map.put(:paired_vs_raw_best, paired_comparison(report, raw_best))
-        |> Map.put(:promotion_guardrails, guardrails(report, raw_best))
+        |> Map.put(:promotion_guardrails, guardrails(report, raw_best, min_uaf1_delta))
       end)
 
-    winner = choose_winner(policy_reports, raw_best)
+    winner = choose_winner(policy_reports, raw_best, min_uaf1_delta)
 
     write_artifacts!(
       out_dir,
@@ -38,6 +39,7 @@ defmodule Sugary.RankingPolicyAblation do
       suite,
       limit,
       offset,
+      min_uaf1_delta,
       policy_reports,
       baseline_reports,
       winner
@@ -308,14 +310,17 @@ defmodule Sugary.RankingPolicyAblation do
     end
   end
 
-  defp guardrails(_report, nil), do: %{passes: false, reason: "missing_raw_baseline"}
+  defp guardrails(_report, nil, _min_uaf1_delta),
+    do: %{passes: false, reason: "missing_raw_baseline"}
 
-  defp guardrails(report, raw_best) do
+  defp guardrails(report, raw_best, min_uaf1_delta) do
     score = report.score
     baseline = raw_best.score
 
     checks = %{
       beats_f1: score.f1 > baseline.f1,
+      uaf1_delta:
+        usefulness_adjusted_f1(score) - usefulness_adjusted_f1(baseline) >= min_uaf1_delta,
       usefulness: score.usefulness >= baseline.usefulness,
       snr: score.snr >= baseline.snr,
       noise: score.noise <= baseline.noise,
@@ -326,9 +331,9 @@ defmodule Sugary.RankingPolicyAblation do
     %{passes: Enum.all?(Map.values(checks)), checks: checks}
   end
 
-  defp choose_winner(policy_reports, raw_best) do
+  defp choose_winner(policy_reports, raw_best, min_uaf1_delta) do
     policy_reports
-    |> Enum.filter(&(guardrails(&1, raw_best).passes == true))
+    |> Enum.filter(&(guardrails(&1, raw_best, min_uaf1_delta).passes == true))
     |> Enum.max_by(&{&1.research_utility, &1.score.f1, &1.score.snr}, fn -> nil end)
   end
 
@@ -395,6 +400,7 @@ defmodule Sugary.RankingPolicyAblation do
          suite,
          limit,
          offset,
+         min_uaf1_delta,
          policy_reports,
          baseline_reports,
          winner
@@ -405,6 +411,7 @@ defmodule Sugary.RankingPolicyAblation do
       suite: suite,
       limit: limit,
       offset: offset,
+      min_uaf1_delta: min_uaf1_delta,
       policies: Enum.map(policy_reports, & &1.policy)
     })
 
@@ -422,7 +429,15 @@ defmodule Sugary.RankingPolicyAblation do
 
     File.write!(
       Path.join(out_dir, "report.md"),
-      render_report(policy_reports, baseline_reports, winner, suite, limit, offset)
+      render_report(
+        policy_reports,
+        baseline_reports,
+        winner,
+        suite,
+        limit,
+        offset,
+        min_uaf1_delta
+      )
     )
   end
 
@@ -430,12 +445,21 @@ defmodule Sugary.RankingPolicyAblation do
     report
     |> Map.drop([:per_case])
     |> Map.put(:score, Map.from_struct(report.score))
+    |> Map.put(:usefulness_adjusted_f1, usefulness_adjusted_f1(report.score))
   end
 
   defp decision(nil), do: %{decision: "no_policy_promoted"}
   defp decision(winner), do: %{decision: "promote", policy_id: winner.policy_id}
 
-  defp render_report(policy_reports, baseline_reports, winner, suite, limit, offset) do
+  defp render_report(
+         policy_reports,
+         baseline_reports,
+         winner,
+         suite,
+         limit,
+         offset,
+         min_uaf1_delta
+       ) do
     baseline_rows =
       baseline_reports
       |> Enum.map(&score_row(&1, false))
@@ -458,17 +482,18 @@ defmodule Sugary.RankingPolicyAblation do
     - Limit: #{limit}
     - Candidate pool: fixed claims from prior run artifacts.
     - Decision metric: research utility with F1/usefulness/SNR/noise/comment guardrails.
+    - Minimum UAF1 delta over raw baseline: #{fmt(min_uaf1_delta)}
 
     ## Baselines
 
-    | Method | Utility | F1 | Recall | Usefulness | SNR | Hits | Noise | Comments | Avg Comments/PR | Critical/High Recall |
-    | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+    | Method | Utility | F1 | UAF1 | Recall | Usefulness | SNR | Hits | Noise | Comments | Avg Comments/PR | Critical/High Recall |
+    | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
     #{baseline_rows}
 
     ## Policies
 
-    | Policy | Utility | F1 | Recall | Usefulness | SNR | Hits | Noise | Comments | Avg Comments/PR | Critical/High Recall | Paired Win vs Current | Paired Win vs Raw |
-    | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+    | Policy | Utility | F1 | UAF1 | Recall | Usefulness | SNR | Hits | Noise | Comments | Avg Comments/PR | Critical/High Recall | Paired Win vs Current | Paired Win vs Raw |
+    | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
     #{policy_rows}
 
     ## Decision
@@ -482,8 +507,10 @@ defmodule Sugary.RankingPolicyAblation do
     paired_current = if include_paired?, do: win_rate(report.paired_vs_current), else: ""
     paired_raw = if include_paired?, do: win_rate(report.paired_vs_raw_best), else: ""
 
-    "| #{report.policy_id} | #{fmt(report.research_utility)} | #{fmt(score.f1)} | #{fmt(score.recall)} | #{fmt(score.usefulness)} | #{fmt(score.snr)} | #{score.hits} | #{score.noise} | #{score.published_claims} | #{fmt(score.avg_comments_per_pr)} | #{fmt(report.critical_high_recall)} | #{paired_current} | #{paired_raw} |"
+    "| #{report.policy_id} | #{fmt(report.research_utility)} | #{fmt(score.f1)} | #{fmt(usefulness_adjusted_f1(score))} | #{fmt(score.recall)} | #{fmt(score.usefulness)} | #{fmt(score.snr)} | #{score.hits} | #{score.noise} | #{score.published_claims} | #{fmt(score.avg_comments_per_pr)} | #{fmt(report.critical_high_recall)} | #{paired_current} | #{paired_raw} |"
   end
+
+  defp usefulness_adjusted_f1(score), do: score.f1 * score.usefulness
 
   defp win_rate(nil), do: ""
   defp win_rate(comparison), do: fmt(comparison.win_rate)
