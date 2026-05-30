@@ -592,3 +592,55 @@ Interpretation:
 Next research move:
 
 Configure `MARTIAN_API_KEY` and a fixed `MARTIAN_MODEL`, run Martian Step 2, Step 2.5, Step 3, and dashboard locally for `sugary-pcrs-repo-budget-max2`, then compare the official local precision/recall/F1 against CodeRabbit, Cubic, Greptile, and the other bundled tools without submitting anything.
+
+## 2026-05-30: Martian No-Key Comparison v0
+
+Command sequence:
+
+```sh
+mix escript.build
+./sugary martian no-key report --sugary-tool sugary-pcrs-repo-budget-max2 --model-dir sugary_local_parity_v0 --martian-dir .sugary/research/benchmarks/martian-offline/offline --id martian-no-key-comparison-v0
+```
+
+Run artifact:
+
+```text
+.sugary/research/martian-no-key/20260530T154335Z-martian-no-key-comparison-v0
+```
+
+Scope:
+
+- API key: none.
+- Official Sugary score: no.
+- Existing bundled Martian evaluations: yes.
+- Sugary status: exported but unjudged.
+
+Sugary pending judge workload:
+
+| Item | Count |
+| --- | ---: |
+| PRs with Sugary review entry | 50/50 |
+| Sugary candidates awaiting Martian judge | 51 |
+| Candidate/golden judge pairs | 145 |
+
+Competitor focus from bundled evaluations, averaged across three judge models:
+
+| Tool | Avg F1 | Avg Precision | Avg Recall | Avg candidates/PR |
+| --- | ---: | ---: | ---: | ---: |
+| `cubic-v2` | 0.608 | 0.552 | 0.676 | 3.493 |
+| `cubic-dev` | 0.417 | 0.289 | 0.752 | 7.527 |
+| `greptile-v4-1` | 0.413 | 0.372 | 0.465 | 3.587 |
+| `greptile-v4` | 0.406 | 0.312 | 0.582 | 5.400 |
+| `greptile` | 0.400 | 0.409 | 0.392 | 2.853 |
+| `coderabbit` | 0.352 | 0.255 | 0.569 | 6.427 |
+
+Top bundled tool:
+
+- `cubic-v2` averaged 0.608 F1 across the bundled judge files.
+- `cubic-v2` used about 3.5 candidates per PR, which is far denser than Sugary's current 51 candidates across 50 PRs.
+
+Interpretation:
+
+- Without `MARTIAN_API_KEY`, the best available work is target analysis, proxy iteration, and making the official score gap explicit.
+- Sugary's exported candidate budget is conservative relative to top bundled tools, so the next no-key research loop should focus on higher-recall candidate generation while preserving the budgeted publisher.
+- Any claim that Sugary beats or trails these tools must wait for official judging of Sugary's candidates.

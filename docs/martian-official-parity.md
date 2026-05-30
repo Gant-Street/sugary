@@ -42,6 +42,18 @@ uv run python analysis/benchmark_dashboard.py
 
 If credentials are missing, Sugary should report that as a setup block, not as benchmark success or failure.
 
+## No-Key Comparison
+
+If you are intentionally skipping `MARTIAN_API_KEY`, use the bundled Martian evaluation files to understand the competitor target landscape while keeping Sugary marked as unjudged:
+
+```sh
+./sugary martian no-key report \
+  --sugary-tool sugary-pcrs-repo-budget-max2 \
+  --model-dir sugary_local_parity_v0
+```
+
+This report reads existing Martian `evaluations.json` files for bundled tools, summarizes CodeRabbit/Cubic/Greptile-style competitors, and reports how many Sugary candidates are waiting for the official judge. It does not assign Sugary an official F1.
+
 ## Rules
 
 - Do not submit benchmark results from this command.
