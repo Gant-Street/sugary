@@ -877,3 +877,84 @@ Interpretation:
 - The useful product shape is now clearer: trust/default and qualified-F1 should be separate policies.
 - Tail expansion without a publisher is harmful; the raw diagnostic has higher recall but much lower precision.
 - The next loop should validate whether these exported candidates survive real Martian judging or reproduce on a fresh public slice before productizing the qualified-F1 mode.
+
+## 2026-05-30: PCRS v3 No-Key Recall + Judge-Risk Gauntlet
+
+Checkpoint:
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+baseline commit: 6f1bf71
+status: negative result against stretch target
+official Martian score: not claimed
+Martian API key used: no
+```
+
+Command sequence:
+
+```sh
+mix escript.build
+./sugary experiment run experiments/martian-pcrs-v3-repo-xhigh-candidate.toml --replay-mode cache-first
+./sugary experiment run experiments/martian-pcrs-v3-repo-grep-low-candidate.toml --replay-mode refresh
+./sugary experiment run experiments/martian-pcrs-v3-repo-grep-raw-low-candidate.toml --replay-mode refresh
+./sugary pcrs ensemble publisher --id pcrs-ensemble-v3-no-key-diagnostics --limit 50 --offset 0
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260530T215959Z-pcrs-ensemble-v3-no-key-diagnostics --method posterior-max1-plus-source5-qualified-triad-budget52 --tool sugary-pcrs-trust-v3 --policy raw --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_pcrs_trust_v3 --limit 50 --offset 0 --id pcrs-trust-v3-parity
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260530T215959Z-pcrs-ensemble-v3-no-key-diagnostics --method qualified-f1-trust-plus-tail-team-xhigh-budget78 --tool sugary-pcrs-qualified-f1-v3 --policy raw --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_pcrs_qualified_f1_v3 --limit 50 --offset 0 --id pcrs-qualified-f1-v3-parity
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260530T215959Z-pcrs-ensemble-v3-no-key-diagnostics --method raw-f1-tail-diagnostic-budget110 --tool sugary-pcrs-raw-f1-v3 --policy raw --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_pcrs_raw_f1_v3 --limit 50 --offset 0 --id pcrs-raw-f1-v3-parity
+./sugary martian no-key report --sugary-tool sugary-pcrs-trust-v3 --model-dir sugary_pcrs_trust_v3 --martian-dir .sugary/research/benchmarks/martian-offline/offline --id pcrs-trust-v3-no-key
+./sugary martian no-key report --sugary-tool sugary-pcrs-qualified-f1-v3 --model-dir sugary_pcrs_qualified_f1_v3 --martian-dir .sugary/research/benchmarks/martian-offline/offline --id pcrs-qualified-f1-v3-no-key
+./sugary martian no-key report --sugary-tool sugary-pcrs-raw-f1-v3 --model-dir sugary_pcrs_raw_f1_v3 --martian-dir .sugary/research/benchmarks/martian-offline/offline --id pcrs-raw-f1-v3-no-key
+```
+
+Run artifacts:
+
+```text
+.sugary/research/runs/20260530T174649Z-martian-pcrs-v3-repo-xhigh-candidate
+.sugary/research/runs/20260530T201021Z-martian-pcrs-v3-repo-grep-low-candidate
+.sugary/research/runs/20260530T210358Z-martian-pcrs-v3-repo-grep-raw-low-candidate
+.sugary/research/pcrs-ensemble-publisher/20260530T215959Z-pcrs-ensemble-v3-no-key-diagnostics
+.sugary/research/martian-parity/20260530T220136Z-pcrs-trust-v3-parity
+.sugary/research/martian-parity/20260530T220140Z-pcrs-qualified-f1-v3-parity
+.sugary/research/martian-parity/20260530T220145Z-pcrs-raw-f1-v3-parity
+.sugary/research/martian-no-key/20260530T220147Z-pcrs-trust-v3-no-key
+.sugary/research/martian-no-key/20260530T220150Z-pcrs-qualified-f1-v3-no-key
+.sugary/research/martian-no-key/20260530T220153Z-pcrs-raw-f1-v3-no-key
+```
+
+V3 publisher result:
+
+| Gate | Result |
+| --- | --- |
+| Trust/default F1 >= 0.455 | pass: 0.455 |
+| Trust/default precision >= 0.820 | pass: 0.827 |
+| Qualified F1 >= 0.545 | fail: 0.521 |
+| Qualified precision >= 0.720 | fail: 0.718 |
+| Qualified hits >= 61 | fail: 56 |
+| Qualified noise <= 23 | pass: 22 |
+| Candidate-pool hits >= 90 | fail: 79 |
+| Candidate-pool oracle recall >= 90/137 | fail: 0.577 |
+| Raw diagnostic hits >= 70 | fail: 61 |
+| Repo groups passing or diagnosed | pass |
+
+Candidate-generation variables:
+
+| Variable | Hits | Noise | Claims/comments | Unique hits over v2 pool | Decision |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `pcrs-codex-repo-xhigh` | 6 | 2 | 12 raw claims | 0 | reject: slow, sparse, usage-limit sensitive |
+| `pcrs-codex-repo-grep-low` | 36 | 24 | 66 raw claims | 1 | reject as promoted source; useful diagnostic |
+| `codex-repo-grep-low-raw` | 33 | 21 | 58 raw claims | 0 | reject: removes proof wrapper but does not add unique recall |
+
+New diagnostics added:
+
+- `missing-gold-analysis.json`
+- `tail-verifier-analysis.json`
+- `judge-risk-report.json`
+- `repo-group-diagnostics.json`
+
+Interpretation:
+
+- The v3 stretch target was not met.
+- The candidate-pool ceiling moved only from 79 to 80 when adding the best new repo-grep source, far short of the 90/137 target.
+- Repo-grep compact context is a useful harness variable because it produces real claims after quota reset, but it mostly duplicates existing v2 hits on this slice.
+- Xhigh reasoning is not a good no-key default in this setup: it is slow, timeout-prone, and added no unique local gold claims.
+- The next high-value step is not another publisher tweak. It is a new candidate-generation approach that can find missing Sentry/Grafana/Keycloak categories, or a proper provider/API key so the loop can run larger model/tool sweeps without quota interruption.

@@ -1,0 +1,29 @@
+id = "martian-pcrs-v3-repo-xhigh-candidate"
+description = "PCRS v3 candidate-pool expansion test: same blinded repo-aware PCRS harness as v2 low, with Codex xhigh reasoning as the single moved variable. Unofficial local smoke, not an official benchmark score."
+suite = "martian-offline"
+limit = 50
+offset = 0
+replay_mode = "cache-first"
+max_cost_usd = 0.00
+max_duration_seconds = 28800
+
+[[reviewers]]
+id = "pcrs-codex-repo-xhigh"
+type = "command"
+enabled = true
+include_workspace = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/pcrs_codex_proof_reviewer.exs"]
+timeout_ms = 360000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "proof_gate", "refutation", "repo_workspace", "search", "xhigh_reasoning"]
+evidence = "static_repo_proof"
+refutation = "public_proof_refuter"
+ranking = "expected_value_stub"
+env = ["SUGARY_REVIEWER_ID=pcrs-codex-repo-xhigh", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=xhigh", "SUGARY_CODEX_MAX_CLAIMS=4", "SUGARY_CODEX_INNER_TIMEOUT_MS=300000", "SUGARY_PCRS_MAX_CLAIMS=4", "SUGARY_PCRS_MIN_CODEX_CONFIDENCE=0.70", "SUGARY_PCRS_INNER_REVIEWER_SCRIPT=scripts/reviewers/codex_repo_reviewer.exs"]

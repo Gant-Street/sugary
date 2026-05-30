@@ -1,0 +1,29 @@
+id = "martian-pcrs-v3-repo-grep-raw-low-candidate"
+description = "PCRS v3 candidate-pool expansion test: raw Codex low reviewer with precomputed changed-file rg context and compact input. Single moved variable from the prior repo-grep test is removing the PCRS proof wrapper before candidate pooling. Unofficial local smoke, not an official benchmark score."
+suite = "martian-offline"
+limit = 50
+offset = 0
+replay_mode = "cache-first"
+max_cost_usd = 0.00
+max_duration_seconds = 28800
+
+[[reviewers]]
+id = "codex-repo-grep-low-raw"
+type = "command"
+enabled = true
+include_workspace = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_repo_grep_reviewer.exs"]
+timeout_ms = 210000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "repo_workspace", "repo_grep_context", "compact_input", "raw_candidate_generation"]
+evidence = "static_repo_grep_context"
+refutation = "none"
+ranking = "expected_value_stub"
+env = ["SUGARY_REVIEWER_ID=codex-repo-grep-low-raw", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=5", "SUGARY_CODEX_INNER_TIMEOUT_MS=150000", "SUGARY_CODEX_GREP_MAX_DIFF_CHARS=18000", "SUGARY_CODEX_GREP_MAX_LINES=120"]
