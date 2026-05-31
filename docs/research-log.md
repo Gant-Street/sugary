@@ -958,3 +958,83 @@ Interpretation:
 - Repo-grep compact context is a useful harness variable because it produces real claims after quota reset, but it mostly duplicates existing v2 hits on this slice.
 - Xhigh reasoning is not a good no-key default in this setup: it is slow, timeout-prone, and added no unique local gold claims.
 - The next high-value step is not another publisher tweak. It is a new candidate-generation approach that can find missing Sentry/Grafana/Keycloak categories, or a proper provider/API key so the loop can run larger model/tool sweeps without quota interruption.
+
+## 2026-05-30: PCRS v3 Continuation - Symbol Search + Contract Specialist
+
+Checkpoint:
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: improved but still below stretch target
+official Martian score: not claimed
+Martian API key used: no
+```
+
+What changed:
+
+- Corrected the v3 publisher source list so repo-grep, raw repo-grep, xhigh, symbol-search, and contract-specialist runs are actually included in the candidate pool.
+- Added bounded repo-wide symbol search as a new harness variable.
+- Added optional specialist prompt injection to the Codex repo reviewer.
+- Added a contract/integration specialist candidate run.
+- Added a deduped posterior strategy for judge-risk-aware qualified publishing.
+
+Command sequence:
+
+```sh
+./sugary pcrs ensemble publisher --id pcrs-ensemble-v3-repo-grep-sources --limit 50 --offset 0
+./sugary experiment run experiments/martian-pcrs-v3-repo-symbol-low-candidate.toml --replay-mode refresh
+./sugary pcrs ensemble publisher --id pcrs-ensemble-v3-symbol-sources --limit 50 --offset 0
+./sugary pcrs ensemble publisher --id pcrs-ensemble-v3-deduped-judge-risk --limit 50 --offset 0
+./sugary experiment run experiments/martian-pcrs-v3-contract-specialist-low-candidate.toml --replay-mode refresh
+./sugary pcrs ensemble publisher --id pcrs-ensemble-v3-contract-specialist-sources --limit 50 --offset 0
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260531T000037Z-pcrs-ensemble-v3-contract-specialist-sources --method posterior-max1-plus-source5-qualified-triad-budget52 --tool sugary-pcrs-trust-v3b --policy raw --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_pcrs_trust_v3b --limit 50 --offset 0 --id pcrs-trust-v3b-parity
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260531T000037Z-pcrs-ensemble-v3-contract-specialist-sources --method qualified-f1-judge-risk-budget84-max3 --tool sugary-pcrs-qualified-f1-v3b --policy raw --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_pcrs_qualified_f1_v3b --limit 50 --offset 0 --id pcrs-qualified-f1-v3b-parity
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260531T000037Z-pcrs-ensemble-v3-contract-specialist-sources --method raw-f1-tail-diagnostic-budget110 --tool sugary-pcrs-raw-f1-v3b --policy raw --martian-dir .sugary/research/benchmarks/martian-offline/offline --model-dir sugary_pcrs_raw_f1_v3b --limit 50 --offset 0 --id pcrs-raw-f1-v3b-parity
+./sugary martian no-key report --sugary-tool sugary-pcrs-trust-v3b --model-dir sugary_pcrs_trust_v3b --martian-dir .sugary/research/benchmarks/martian-offline/offline --id pcrs-trust-v3b-no-key
+./sugary martian no-key report --sugary-tool sugary-pcrs-qualified-f1-v3b --model-dir sugary_pcrs_qualified_f1_v3b --martian-dir .sugary/research/benchmarks/martian-offline/offline --id pcrs-qualified-f1-v3b-no-key
+./sugary martian no-key report --sugary-tool sugary-pcrs-raw-f1-v3b --model-dir sugary_pcrs_raw_f1_v3b --martian-dir .sugary/research/benchmarks/martian-offline/offline --id pcrs-raw-f1-v3b-no-key
+```
+
+Run artifacts:
+
+```text
+.sugary/research/runs/20260530T220639Z-martian-pcrs-v3-repo-symbol-low-candidate
+.sugary/research/runs/20260530T230843Z-martian-pcrs-v3-contract-specialist-low-candidate
+.sugary/research/pcrs-ensemble-publisher/20260531T000037Z-pcrs-ensemble-v3-contract-specialist-sources
+.sugary/research/martian-parity/20260531T000135Z-pcrs-trust-v3b-parity
+.sugary/research/martian-parity/20260531T000140Z-pcrs-qualified-f1-v3b-parity
+.sugary/research/martian-parity/20260531T000144Z-pcrs-raw-f1-v3b-parity
+.sugary/research/martian-no-key/20260531T000149Z-pcrs-trust-v3b-no-key
+.sugary/research/martian-no-key/20260531T000153Z-pcrs-qualified-f1-v3b-no-key
+.sugary/research/martian-no-key/20260531T000157Z-pcrs-raw-f1-v3b-no-key
+```
+
+Final v3b publisher result:
+
+| Gate | Result |
+| --- | --- |
+| Trust/default F1 >= 0.455 | pass: 0.466 |
+| Trust/default precision >= 0.820 | pass: 0.846 |
+| Qualified F1 >= 0.545 | fail: 0.528 |
+| Qualified precision >= 0.720 | pass: 0.722 |
+| Qualified hits >= 61 | fail: 57 |
+| Qualified noise <= 23 | pass: 22 |
+| Candidate-pool hits >= 90 | fail: 81 |
+| Candidate-pool oracle recall >= 90/137 | fail: 0.591 |
+| Raw diagnostic hits >= 70 | fail: 61 |
+| Repo groups passing or diagnosed | pass |
+
+Candidate-generation variables:
+
+| Variable | Standalone hits | Noise | Unique hits over current pool | Decision |
+| --- | ---: | ---: | ---: | --- |
+| `pcrs-codex-repo-symbol-low` | 31 | 26 | 1 | reject as standalone; keep as low-prior tail source |
+| `pcrs-codex-contract-specialist-low` | 36 | 38 | 2 | reject as standalone; keep as low-prior tail source |
+
+Interpretation:
+
+- Source-list correction showed repo-grep added raw volume but did not add scored pool recall.
+- Symbol search was too slow/noisy as a standalone reviewer and added only one unique local-gold hit.
+- Contract specialization added a Sentry miss and improved the trust/default publisher, but it was still noisy as a standalone reviewer.
+- The deduped judge-risk publisher moved the qualified policy across the precision/noise gates, but not the F1/hit gates.
+- The active bottleneck is still candidate generation, not publishing. We need roughly 9 more unique local-gold hits in the candidate pool before the 90/137 target is reachable.

@@ -11,6 +11,7 @@ reasoning_effort = System.get_env("SUGARY_CODEX_REASONING_EFFORT") || "low"
 max_claims = String.to_integer(System.get_env("SUGARY_CODEX_MAX_CLAIMS") || "3")
 inner_timeout_ms = String.to_integer(System.get_env("SUGARY_CODEX_INNER_TIMEOUT_MS") || "120000")
 codex = System.get_env("SUGARY_CODEX_BIN") || "codex"
+review_focus = System.get_env("SUGARY_CODEX_REVIEW_FOCUS") || ""
 
 bundle_workspace_head = get_in(bundle, ["metadata", "workspace", "head"])
 bundle_workspace_base = get_in(bundle, ["metadata", "workspace", "base"])
@@ -41,6 +42,16 @@ workspace_summary =
     Target repository context:
     - No materialized checkout was provided.
     - Review from the sanitized diff and PR metadata only.
+    """
+  end
+
+focus_section =
+  if String.trim(review_focus) == "" do
+    ""
+  else
+    """
+    Specialist focus:
+    #{review_focus}
     """
   end
 
@@ -103,6 +114,7 @@ Return JSON only, following the provided schema.
 Review the sanitized ReviewInputBundle below and, when available, the materialized target repository checkout. Do not use fixture oracle data. Do not infer a bug solely from case_id, suite, tags, benchmark-looking names, or benchmark metadata.
 
 #{workspace_summary}
+#{focus_section}
 
 Publish only defects that appear introduced by this PR. Prefer concrete bug, security, contract, runtime, or test-gap findings. Avoid style comments and speculative edge cases. If evidence is weak, return no claims.
 
@@ -155,12 +167,20 @@ File.write!(request_path, :json.encode(request))
 runner_result =
   try do
     case System.cmd("python3", ["scripts/command_process_runner.py", request_path]) do
-      {stdout, 0} -> :json.decode(stdout)
-      {stdout, status} -> %{"stdout" => stdout, "stderr" => "process runner failed", "exit_status" => status}
+      {stdout, 0} ->
+        :json.decode(stdout)
+
+      {stdout, status} ->
+        %{"stdout" => stdout, "stderr" => "process runner failed", "exit_status" => status}
     end
   rescue
     error ->
-      %{"stdout" => "", "stderr" => Exception.message(error), "exit_status" => 1, "timed_out" => false}
+      %{
+        "stdout" => "",
+        "stderr" => Exception.message(error),
+        "exit_status" => 1,
+        "timed_out" => false
+      }
   end
 
 duration_ms = System.monotonic_time(:millisecond) - started
@@ -240,7 +260,8 @@ claims =
             tool: "codex_repo",
             model: model,
             reasoning_effort: reasoning_effort,
-            workspace_provided: is_binary(bundle_workspace_head) and File.dir?(bundle_workspace_head),
+            workspace_provided:
+              is_binary(bundle_workspace_head) and File.dir?(bundle_workspace_head),
             raw_finding_ref: index
           },
           publish_decision: "candidate"
@@ -254,7 +275,16 @@ claims =
 errors =
   cond do
     status != 0 ->
-      [%{reason: if(Map.get(runner_result, "timed_out"), do: "codex_timeout", else: "codex_non_zero_exit"), status: status}]
+      [
+        %{
+          reason:
+            if(Map.get(runner_result, "timed_out"),
+              do: "codex_timeout",
+              else: "codex_non_zero_exit"
+            ),
+          status: status
+        }
+      ]
 
     parsed == :error ->
       [%{reason: "codex_invalid_json"}]

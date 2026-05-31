@@ -190,7 +190,51 @@ defmodule Sugary.PCRSEnsemblePublisher do
     }
   ]
 
-  @default_sources @core_sources ++ @tail_sources
+  @v3_candidate_sources [
+    %{
+      run: ".sugary/research/runs/20260530T174649Z-martian-pcrs-v3-repo-xhigh-candidate",
+      method: "pcrs-codex-repo-xhigh",
+      source: "v3-repo-xhigh",
+      pool: :tail,
+      family: "pcrs_repo_xhigh",
+      source_prior: 0.50
+    },
+    %{
+      run: ".sugary/research/runs/20260530T201021Z-martian-pcrs-v3-repo-grep-low-candidate",
+      method: "pcrs-codex-repo-grep-low",
+      source: "v3-repo-grep-low",
+      pool: :tail,
+      family: "pcrs_repo_grep",
+      source_prior: 0.50
+    },
+    %{
+      run: ".sugary/research/runs/20260530T210358Z-martian-pcrs-v3-repo-grep-raw-low-candidate",
+      method: "codex-repo-grep-low-raw",
+      source: "v3-repo-grep-raw-low",
+      pool: :tail,
+      family: "codex_repo_grep_raw",
+      source_prior: 0.46
+    },
+    %{
+      run: ".sugary/research/runs/20260530T220639Z-martian-pcrs-v3-repo-symbol-low-candidate",
+      method: "pcrs-codex-repo-symbol-low",
+      source: "v3-repo-symbol-low",
+      pool: :tail,
+      family: "pcrs_repo_symbol",
+      source_prior: 0.48
+    },
+    %{
+      run:
+        ".sugary/research/runs/20260530T230843Z-martian-pcrs-v3-contract-specialist-low-candidate",
+      method: "pcrs-codex-contract-specialist-low",
+      source: "v3-contract-specialist-low",
+      pool: :tail,
+      family: "pcrs_contract_specialist",
+      source_prior: 0.47
+    }
+  ]
+
+  @default_sources @core_sources ++ @tail_sources ++ @v3_candidate_sources
 
   @policies [
     %{id: "posterior-budget-52-t55", threshold: 0.55, max_per_pr: 2, total_budget: @total_budget},
@@ -274,6 +318,19 @@ defmodule Sugary.PCRSEnsemblePublisher do
       require_tail_verification: true,
       hypothesis:
         "Preserve the trust/default set, then add at most one team-backed or xhigh tail claim per PR after near-duplicate suppression."
+    },
+    %{
+      id: "qualified-f1-judge-risk-budget84-max3",
+      mode: "qualified_f1",
+      budget_tier: 84,
+      strategy: "deduped_posterior",
+      threshold: 0.0,
+      max_per_pr: 3,
+      total_budget: 84,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      hypothesis:
+        "Use tail verification as the judge-risk gate, then spend a fixed global budget on the highest posterior candidates instead of using a hard posterior threshold that suppresses local true positives."
     },
     %{
       id: "qualified-f1-trust-plus-tail-diverse-budget80",
@@ -872,10 +929,10 @@ defmodule Sugary.PCRSEnsemblePublisher do
   end
 
   defp selected_candidate_ids(case_pools, policy) do
-    if Map.get(policy, :strategy) == "trust_plus_tail" do
-      trust_plus_tail_selected_candidate_ids(case_pools, policy)
-    else
-      posterior_selected_candidate_ids(case_pools, policy)
+    case Map.get(policy, :strategy) do
+      "trust_plus_tail" -> trust_plus_tail_selected_candidate_ids(case_pools, policy)
+      "deduped_posterior" -> deduped_posterior_selected_candidate_ids(case_pools, policy)
+      _ -> posterior_selected_candidate_ids(case_pools, policy)
     end
   end
 
@@ -887,6 +944,45 @@ defmodule Sugary.PCRSEnsemblePublisher do
     |> Enum.filter(&(policy_posterior(&1, policy) >= policy.threshold))
     |> Enum.sort_by(&policy_posterior(&1, policy), :desc)
     |> Enum.take(policy.total_budget)
+    |> Enum.map(& &1.id)
+    |> MapSet.new()
+  end
+
+  defp deduped_posterior_selected_candidate_ids(case_pools, policy) do
+    candidates =
+      case_pools
+      |> Enum.flat_map(fn case_pool ->
+        case_pool.candidates
+        |> Enum.filter(&allowed_by_policy?(&1, policy))
+        |> Enum.filter(&(policy_posterior(&1, policy) >= policy.threshold))
+        |> Enum.map(&Map.put(&1, :case_id, case_pool.case.id))
+      end)
+      |> Enum.sort_by(&policy_posterior(&1, policy), :desc)
+
+    {selected, _counts} =
+      Enum.reduce(candidates, {[], %{}}, fn candidate, {selected, counts} ->
+        case_id = candidate.case_id
+
+        cond do
+          length(selected) >= policy.total_budget ->
+            {selected, counts}
+
+          Map.get(counts, case_id, 0) >= policy.max_per_pr ->
+            {selected, counts}
+
+          near_duplicate?(
+            candidate,
+            selected,
+            Map.get(policy, :near_duplicate_jaccard, 0.18)
+          ) ->
+            {selected, counts}
+
+          true ->
+            {[candidate | selected], Map.update(counts, case_id, 1, &(&1 + 1))}
+        end
+      end)
+
+    selected
     |> Enum.map(& &1.id)
     |> MapSet.new()
   end
