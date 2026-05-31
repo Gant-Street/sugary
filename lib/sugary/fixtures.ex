@@ -87,7 +87,7 @@ defmodule Sugary.Fixtures do
   end
 
   defp public_benchmark?(bench_case) do
-    bench_case.public_benchmark == true or bench_case.suite in ["martian-offline", "cr-bench"]
+    bench_case.public_benchmark == true or Sugary.PublicBenchmarks.public_suite?(bench_case.suite)
   end
 
   defp input_metadata(bench_case, method, blind?) do

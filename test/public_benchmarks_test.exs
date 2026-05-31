@@ -61,11 +61,75 @@ defmodule Sugary.PublicBenchmarksTest do
     dir
   end
 
+  defp mock_aacr_dir do
+    dir =
+      Path.join(
+        System.tmp_dir!(),
+        "sugary-aacr-bench-#{System.unique_integer([:positive])}"
+      )
+
+    dataset_dir = Path.join(dir, "dataset")
+    File.mkdir_p!(dataset_dir)
+    on_exit(fn -> File.rm_rf(dir) end)
+
+    sample = %{
+      "category" => "Bug Fix",
+      "project_main_language" => "JavaScript",
+      "source_commit" => "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "target_commit" => "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "change_line_count" => 12,
+      "githubPrUrl" => "https://github.com/example/repo/pull/123",
+      "diff" => """
+      diff --git a/app/assets/javascripts/discourse/lib/utilities.js b/app/assets/javascripts/discourse/lib/utilities.js
+      --- a/app/assets/javascripts/discourse/lib/utilities.js
+      +++ b/app/assets/javascripts/discourse/lib/utilities.js
+      -    var maxSizeKB = Discourse.SiteSettings['max_' + type + '_size_kb'];
+      +    var maxSizeKB = 10 * 1024; // 10MB
+      """,
+      "comments" => [
+        %{
+          "is_ai_comment" => true,
+          "note" =>
+            "Hardcoding maxSizeKB = 10 * 1024 ignores Discourse.SiteSettings upload limits.",
+          "path" => "app/assets/javascripts/discourse/lib/utilities.js",
+          "side" => "right",
+          "source_model" => "fixture",
+          "from_line" => 4,
+          "to_line" => 4,
+          "category" => "Code Defect",
+          "context" => "Diff Level"
+        }
+      ]
+    }
+
+    negative = %{
+      sample
+      | "comments" => [
+          %{
+            "is_ai_comment" => false,
+            "note" => "The variable name could be shorter, but this is style-only.",
+            "path" => "app/assets/javascripts/discourse/lib/utilities.js",
+            "side" => "right",
+            "source_model" => "",
+            "from_line" => 4,
+            "to_line" => 4,
+            "category" => "Maintainability and Readability",
+            "context" => "Diff Level"
+          }
+        ]
+    }
+
+    Sugary.Json.write!(Path.join(dataset_dir, "positive_samples.json"), [sample])
+    Sugary.Json.write!(Path.join(dataset_dir, "negative_samples.json"), [negative])
+    dir
+  end
+
   test "public benchmark registry lists implemented and planned adapters" do
     rows = Sugary.PublicBenchmarks.list()
 
     assert Enum.find(rows, &(&1.benchmark == "martian-offline")).adapter == "local-smoke"
     assert Enum.find(rows, &(&1.benchmark == "cr-bench")).adapter == "local-smoke"
+    assert Enum.find(rows, &(&1.benchmark == "aacr-bench")).adapter == "local-smoke"
     assert Enum.find(rows, &(&1.benchmark == "c-crab")).status == "planned"
 
     assert Sugary.PublicBenchmarks.render_list(rows) =~ "unofficial local scoring"
@@ -114,6 +178,22 @@ defmodule Sugary.PublicBenchmarksTest do
     end)
   end
 
+  test "AACR-Bench adapter normalizes local mock data with comments and negative traps" do
+    dir = mock_aacr_dir()
+
+    with_env("AACR_BENCH_DIR", dir, fn ->
+      assert {:ok, [bench_case]} = Sugary.AACRBench.list_cases(1)
+
+      assert bench_case.suite == "aacr-bench"
+      assert bench_case.public_benchmark == true
+      assert bench_case.source_metadata.benchmark == "aacr-bench"
+      assert bench_case.source_metadata.repo == "example/repo"
+      assert hd(bench_case.oracle.expectedClaims).description =~ "Hardcoding maxSizeKB"
+      assert hd(bench_case.oracle.knownNonIssues).trapCategory == "aacr_negative_reference"
+      assert bench_case.diff =~ "diff --git"
+    end)
+  end
+
   test "public benchmark reviewer input excludes oracle and original case identifiers" do
     dir = mock_benchmark_dir("martian-offline")
 
@@ -128,6 +208,25 @@ defmodule Sugary.PublicBenchmarksTest do
       refute String.contains?(json, "martian-offline-source-case-001")
       refute String.contains?(json, "\"benchmark\":\"martian-offline\"")
       assert String.contains?(json, "public_benchmark")
+      assert input.suite == "blind"
+    end)
+  end
+
+  test "AACR-Bench reviewer input excludes oracle and original PR URL" do
+    dir = mock_aacr_dir()
+
+    with_env("AACR_BENCH_DIR", dir, fn ->
+      {:ok, [bench_case]} = Sugary.AACRBench.list_cases(1)
+
+      input =
+        Sugary.Fixtures.input_bundle(bench_case, Sugary.Methods.get!("public-static-proof-gate"))
+
+      json = Sugary.Json.encode!(input)
+
+      refute String.contains?(json, "expectedClaims")
+      refute String.contains?(json, "knownNonIssues")
+      refute String.contains?(json, "oracle")
+      refute String.contains?(json, "https://github.com/example/repo/pull/123")
       assert input.suite == "blind"
     end)
   end
@@ -246,6 +345,30 @@ defmodule Sugary.PublicBenchmarksTest do
     assert output =~ "local-method"
     assert output =~ "public-method"
     assert output =~ "unofficial"
+  end
+
+  test "locked transfer gate writes a truthful AACR report" do
+    File.rm_rf(".sugary/research/transfer-gates")
+    dir = mock_aacr_dir()
+
+    with_env("AACR_BENCH_DIR", dir, fn ->
+      transfer_dir =
+        Sugary.TransferGate.run!(%{
+          "id" => "transfer-gate-test",
+          "suite" => "aacr-bench",
+          "limit" => 1,
+          "static-run" => "/tmp/sugary-missing-static-run",
+          "publisher-run" => "/tmp/sugary-missing-publisher-run"
+        })
+
+      on_exit(fn -> File.rm_rf(transfer_dir) end)
+
+      assert File.exists?(Path.join(transfer_dir, "transfer-scorecard.json"))
+      report = File.read!(Path.join(transfer_dir, "generalization-report.md"))
+      assert report =~ "Locked PCRS v3 Transfer Gate"
+      assert report =~ "Static proof candidate"
+      assert report =~ "does not claim benchmark rank"
+    end)
   end
 
   defp mock_run_dir(suite, method_id, f1, prefix \\ "runs") do

@@ -1119,3 +1119,67 @@ Interpretation:
 - The most important result is not the raw diagnostic score; that policy is intentionally non-promotable and noisy.
 - The useful product-shaped result is the qualified policy crossing the F1/hits/precision/noise gates after the candidate pool gained static proof coverage and the deduped publisher bug was fixed.
 - The next research question is generalization: these deterministic patterns helped the first 50 local Martian cases, so the next loop should test whether the same proof-pattern class transfers to a separate offset/holdout slice without adding benchmark-specific leakage.
+
+## 2026-05-30: Locked PCRS v3 AACR Transfer Gate
+
+Checkpoint:
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: clean negative transfer result
+official benchmark score: not claimed
+Martian API key used: no
+AACR API key used: no
+```
+
+What changed:
+
+- Added an AACR-Bench local public adapter.
+- Added a locked PCRS transfer gate that records the Martian-source PCRS v3 checkpoint, runs a frozen candidate on a separate public smoke suite, and reports the generalization gap.
+- Kept the reviewer fixed: no AACR-specific static patterns, no prompt changes, no threshold changes.
+- Model-backed PCRS ensemble transfer is explicitly skipped until equivalent candidate source artifacts exist for AACR.
+
+Command sequence:
+
+```sh
+git clone --depth 1 https://github.com/alibaba/aacr-bench.git .sugary/research/benchmarks/aacr-bench
+mix run -e 'IO.puts(Sugary.TransferGate.run!(%{"id" => "locked-pcrs-v3-aacr-transfer-v0-limit50", "suite" => "aacr-bench", "limit" => 50, "offset" => 0, "locked-commit" => "e66b567"}))'
+```
+
+Run artifacts:
+
+```text
+.sugary/research/transfer-gates/20260531T022219Z-locked-pcrs-v3-aacr-transfer-v0-limit50
+.sugary/research/runs/20260531T022219Z-locked-pcrs-v3-aacr-transfer-v0-limit50-smoke
+.sugary/research/public-smoke/20260531T022219Z-locked-pcrs-v3-aacr-transfer-v0-limit50-smoke
+```
+
+Transfer result on first 50 AACR cases:
+
+| Method | Expected Claims | Hits | Noise | Precision | Recall | F1 | Comments |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `baseline-diff-only` | 467 | 0 | 0 | 0.000 | 0.000 | 0.000 | 0 |
+| `public-static-proof-gate` | 467 | 0 | 0 | 0.000 | 0.000 | 0.000 | 0 |
+
+Source checkpoint for comparison:
+
+| Source | Hits | Noise | Precision | Recall | F1 | Comments |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Static proof on Martian source | 24 | 2 | 0.923 | 0.175 | 0.294 | 26 |
+| Trust publisher on Martian source | 44 | 8 | 0.846 | 0.321 | 0.466 | 52 |
+| Qualified publisher on Martian source | 61 | 23 | 0.726 | 0.445 | 0.552 | 84 |
+
+Leakage checks:
+
+| Check | Result |
+| --- | --- |
+| Input case-id leaks | pass: none |
+| Oracle input files | pass: none |
+| Official/API submission | pass: none |
+
+Interpretation:
+
+- The current deterministic static-proof source does not transfer to AACR. It emitted zero claims on 50 cases covering 467 scorer-only reference comments.
+- This is useful negative evidence, not a product failure. It means the prior win was dominated by Martian-specific candidate-source coverage.
+- The next high-value loop should not tune AACR-specific patterns. It should introduce one benchmark-agnostic variable at a time: repo-aware retrieval, a real model-backed candidate generator, or a small proof tool that can produce claims across projects.
+- The transfer gate itself is now useful infrastructure: it prevents us from mistaking local benchmark optimization for general review capability.

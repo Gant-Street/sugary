@@ -1,0 +1,16 @@
+id = "public-aacr-static-transfer-v0"
+description = "Unofficial AACR-Bench transfer smoke for the locked public static proof gate. Not an official benchmark score."
+suite = "aacr-bench"
+limit = 25
+offset = 0
+replay_mode = "cache-first"
+max_cost_usd = 0.00
+max_duration_seconds = 3600
+
+[[methods]]
+id = "baseline-diff-only"
+reviewer = "baseline-diff-only"
+
+[[methods]]
+id = "public-static-proof-gate"
+reviewer = "public-static-proof-gate"

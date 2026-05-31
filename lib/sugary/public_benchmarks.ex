@@ -14,6 +14,11 @@ defmodule Sugary.PublicBenchmarks do
       notes: "unofficial local scoring",
       module: Sugary.CRBench
     },
+    "aacr-bench" => %{
+      adapter: "local-smoke",
+      notes: "unofficial local scoring",
+      module: Sugary.AACRBench
+    },
     "c-crab" => %{
       adapter: "none",
       notes: "not implemented in v0",
@@ -61,6 +66,7 @@ defmodule Sugary.PublicBenchmarks do
 
   def locate("martian-offline"), do: Sugary.Martian.locate()
   def locate("cr-bench"), do: Sugary.CRBench.locate()
+  def locate("aacr-bench"), do: Sugary.AACRBench.locate()
   def locate(_suite), do: nil
 
   def list_cases(suite, opts \\ []) do
@@ -215,7 +221,7 @@ defmodule Sugary.PublicBenchmarks do
     end
   end
 
-  def public_suite?(suite), do: suite in ["martian-offline", "cr-bench"]
+  def public_suite?(suite), do: suite in ["martian-offline", "cr-bench", "aacr-bench"]
 
   def compare(run_dirs) do
     run_dirs
@@ -408,12 +414,14 @@ defmodule Sugary.PublicBenchmarks do
 
   defp source_url("martian-offline"), do: "https://github.com/withmartian/code-review-benchmark"
   defp source_url("cr-bench"), do: "https://arxiv.org/abs/2603.11078"
+  defp source_url("aacr-bench"), do: "https://github.com/alibaba/aacr-bench"
   defp source_url(_), do: ""
 
   defp license_note("martian-offline"),
     do: "Use according to the local benchmark repository license."
 
   defp license_note("cr-bench"), do: "Use according to the local CR-Bench data license."
+  defp license_note("aacr-bench"), do: "Use according to the local AACR-Bench data license."
   defp license_note(_), do: ""
 
   defp git_sha(path) do

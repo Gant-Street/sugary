@@ -251,7 +251,7 @@ defmodule Sugary.Runner do
     File.write!(path, lines, [:append])
   end
 
-  defp load_suite!(suite, opts) when suite in ["martian-offline", "cr-bench"],
+  defp load_suite!(suite, opts) when suite in ["martian-offline", "cr-bench", "aacr-bench"],
     do: Sugary.PublicBenchmarks.load_cases!(suite, opts)
 
   defp load_suite!(suite, opts) do

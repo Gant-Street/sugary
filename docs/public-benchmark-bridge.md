@@ -16,13 +16,17 @@ Unofficial local smoke run. Not an official benchmark score.
 ./sugary bench public list
 ./sugary bench fetch martian-offline --local-only
 ./sugary bench fetch cr-bench --local-only
+./sugary bench fetch aacr-bench --local-only
 elixir scripts/benchmarks/fetch_martian_diffs.exs --limit 3
 ./sugary bench list --suite martian-offline --limit 3
 ./sugary bench inspect --suite cr-bench --limit 3
+./sugary bench inspect --suite aacr-bench --limit 3
 ./sugary bench run --suite martian-offline --method baseline-diff-only --limit 3 --local-only
 ./sugary experiment run experiments/public-martian-smoke-v0.toml --replay-mode cache-first
 ./sugary experiment run experiments/public-martian-codex-transfer-v0.toml --replay-mode cache-first
 ./sugary experiment run experiments/public-cr-bench-smoke-v0.toml --replay-mode cache-first
+./sugary experiment run experiments/public-aacr-static-transfer-v0.toml --replay-mode cache-first
+./sugary pcrs transfer gate --suite aacr-bench --limit 50
 ./sugary bench compare --run .sugary/research/runs/<local-run> --run .sugary/research/public-smoke/<public-run>
 ```
 
@@ -34,6 +38,7 @@ Implemented in v0:
 | --- | --- | --- |
 | Martian Offline | local smoke | implemented |
 | CR-Bench | local smoke | implemented |
+| AACR-Bench | local smoke | implemented |
 | c-CRAB | none | planned |
 
 Adapters do not submit leaderboard runs and do not claim parity with upstream evaluation scripts.
@@ -67,6 +72,14 @@ The cache is written under:
 ```
 
 This keeps network fetching out of normal scoring and makes replayed smoke runs reproducible. If a diff is missing, the adapter still creates a case, but that case is not useful for judging reviewer quality.
+
+For AACR-Bench, Sugary reads `dataset/positive_samples.json` as scorer-only reference comments and pairs `dataset/negative_samples.json` comments as known non-issue traps when the PR URL matches. PR diffs are fetched from public GitHub `.diff` URLs and cached locally under:
+
+```text
+.sugary/research/benchmarks/aacr-bench/dataset/diff-cache/
+```
+
+No AACR or Martian API key is required for this local bridge. The run is still unofficial: Sugary's deterministic matcher is not the AACR evaluator, which can use LLM or embedding semantic matching.
 
 ## Artifacts
 
@@ -132,3 +145,22 @@ Failures from public smoke should feed the next local fixture and reviewer-desig
 - `codex-gpt-5.5-xhigh`
 
 The intended readout is not benchmark rank. The intended readout is whether local hard-fixture winners transfer to real PRs, whether stronger reasoning actually improves signal, and which missing-context or noise clusters should drive the next PCRS iteration.
+
+## Locked Transfer Gate
+
+`sugary pcrs transfer gate` freezes the current source-run metrics and evaluates a candidate on a separate public smoke suite without retuning the reviewer:
+
+```sh
+./sugary pcrs transfer gate --suite aacr-bench --limit 50 --locked-commit e66b567
+```
+
+The gate writes:
+
+```text
+.sugary/research/transfer-gates/<run-id>/
+  transfer-scorecard.json
+  generalization-report.md
+  run-dir.txt
+```
+
+The first AACR transfer gate is intentionally strict: it records the Martian-source PCRS v3 checkpoint, runs the locked `public-static-proof-gate` unchanged on AACR, and marks the model-backed ensemble publisher as skipped unless equivalent source artifacts exist for the transfer suite.

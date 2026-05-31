@@ -674,7 +674,7 @@ defmodule Sugary.RepoMaterializer do
     """
   end
 
-  defp load_cases!(suite, opts) when suite in ["martian-offline", "cr-bench"],
+  defp load_cases!(suite, opts) when suite in ["martian-offline", "cr-bench", "aacr-bench"],
     do: Sugary.PublicBenchmarks.load_cases!(suite, opts)
 
   defp load_cases!(suite, opts), do: Sugary.Fixtures.load_suite!(suite, opts)
