@@ -236,6 +236,61 @@ defmodule Sugary.Reviewers do
       nil_find_by_dereference?(diff, "TopicUser", "tu"),
       nil_topic_user_claim(method)
     )
+    |> maybe_claim(ruby_open_url_ssrf?(diff), ruby_open_url_ssrf_claim(method))
+    |> maybe_claim(allowall_clickjacking?(diff), allowall_clickjacking_claim(method))
+    |> maybe_claim(
+      unhandled_async_find_members?(diff),
+      unhandled_async_find_members_claim(method)
+    )
+    |> maybe_claim(sample_rate_falsy_guard?(diff), sample_rate_falsy_guard_claim(method))
+    |> maybe_claim(refresh_token_literal?(diff), refresh_token_literal_claim(method))
+    |> maybe_claim(fetch_response_data_shape?(diff), fetch_response_data_shape_claim(method))
+    |> maybe_claim(
+      email_blacklist_case_sensitive?(diff),
+      email_blacklist_case_sensitive_claim(method)
+    )
+    |> maybe_claim(retry_count_stale_increment?(diff), retry_count_stale_increment_claim(method))
+    |> maybe_claim(
+      github_authenticated_state_missing?(diff),
+      github_authenticated_state_missing_claim(method)
+    )
+    |> maybe_claim(
+      dataclass_eager_timestamp_default?(diff),
+      dataclass_eager_timestamp_claim(method)
+    )
+    |> maybe_claim(
+      monitor_config_returns_original?(diff),
+      monitor_config_returns_original_claim(method)
+    )
+    |> maybe_claim(
+      grafana_rule_list_item_missing_key?(diff),
+      grafana_rule_list_item_missing_key_claim(method)
+    )
+    |> maybe_claim(grafana_nil_plugin_context?(diff), grafana_nil_plugin_context_claim(method))
+    |> maybe_claim(grafana_exec_args_splat?(diff), grafana_exec_args_splat_claim(method))
+    |> maybe_claim(
+      grafana_device_limit_ambiguous?(diff),
+      grafana_device_limit_ambiguous_claim(method)
+    )
+    |> maybe_claim(
+      grafana_device_time_window_inconsistent?(diff),
+      grafana_device_time_window_claim(method)
+    )
+    |> maybe_claim(
+      grafana_wrong_logger_context?(diff),
+      grafana_wrong_logger_context_claim(method)
+    )
+    |> maybe_claim(
+      grafana_web_assets_missing_double_check?(diff),
+      grafana_web_assets_double_check_claim(method)
+    )
+    |> maybe_claim(grafana_total_docs_race?(diff), grafana_total_docs_race_claim(method))
+    |> maybe_claim(
+      keycloak_feature_flag_mismatch?(diff),
+      keycloak_feature_flag_mismatch_claim(method)
+    )
+    |> maybe_claim(keycloak_picocli_exit?(diff), keycloak_picocli_exit_claim(method))
+    |> maybe_claim(keycloak_optional_get?(diff), keycloak_optional_get_claim(method))
   end
 
   defp maybe_claim(claims, true, claim), do: claims ++ [claim]
@@ -347,6 +402,123 @@ defmodule Sugary.Reviewers do
       String.contains?(diff, "#{variable}.notification_level")
   end
 
+  defp ruby_open_url_ssrf?(diff) do
+    String.contains?(diff, "open(url).read") and
+      String.contains?(diff, "Readability::Document") and
+      String.contains?(diff, "TopicEmbed.import")
+  end
+
+  defp allowall_clickjacking?(diff) do
+    String.contains?(diff, "X-Frame-Options") and
+      String.contains?(diff, "ALLOWALL") and
+      String.contains?(diff, "request.referer")
+  end
+
+  defp unhandled_async_find_members?(diff) do
+    String.contains?(diff, "return group.findMembers();") and
+      not String.contains?(diff, "findMembers().then")
+  end
+
+  defp sample_rate_falsy_guard?(diff) do
+    String.contains?(diff, "if client_sample_rate:") and
+      String.contains?(diff, ~S|normalized_data["sample_rate"]|)
+  end
+
+  defp refresh_token_literal?(diff) do
+    String.contains?(diff, ~S|refreshTokenResponse.data.refresh_token = "refresh_token"|)
+  end
+
+  defp fetch_response_data_shape?(diff) do
+    String.contains?(diff, "const token = res?.data") and
+      String.contains?(diff, "refreshOAuthTokens(")
+  end
+
+  defp email_blacklist_case_sensitive?(diff) do
+    String.contains?(diff, "blacklistedGuestEmails") and
+      String.contains?(diff, "email.toLowerCase()") and
+      String.contains?(diff, "blacklistedGuestEmails.includes(guest)")
+  end
+
+  defp retry_count_stale_increment?(diff) do
+    String.contains?(diff, "prisma.workflowReminder.update") and
+      String.contains?(diff, "retryCount: reminder.retryCount + 1")
+  end
+
+  defp github_authenticated_state_missing?(diff) do
+    String.contains?(diff, ~S|pipeline.fetch_state("github_authenticated_user")|) and
+      String.contains?(diff, ~S|integration.metadata["sender"]["login"]|)
+  end
+
+  defp dataclass_eager_timestamp_default?(diff) do
+    String.contains?(diff, "@dataclass") and
+      String.contains?(diff, "queued: datetime = timezone.now()")
+  end
+
+  defp monitor_config_returns_original?(diff) do
+    String.contains?(diff, "config = monitor_environment.monitor.config.copy()") and
+      String.contains?(diff, ~S|"config": monitor_environment.monitor.config|)
+  end
+
+  defp grafana_rule_list_item_missing_key?(diff) do
+    String.contains?(diff, "case 'grafana'") and
+      String.contains?(diff, "+                <GrafanaRuleListItem") and
+      String.contains?(diff, "-                  key={key}")
+  end
+
+  defp grafana_nil_plugin_context?(diff) do
+    String.contains?(diff, "type ContextualLoggerMiddleware struct") and
+      String.contains?(diff, "req.PluginContext") and
+      String.contains?(diff, "instrumentContext(ctx")
+  end
+
+  defp grafana_exec_args_splat?(diff) do
+    String.contains?(diff, "args = append([]interface{}{query}, args...)") and
+      String.contains?(diff, "dbSession.Exec(args...)")
+  end
+
+  defp grafana_device_limit_ambiguous?(diff) do
+    String.contains?(diff, "rowsAffected == 0") and
+      String.contains?(diff, "ErrDeviceLimitReached")
+  end
+
+  defp grafana_device_time_window_inconsistent?(diff) do
+    String.contains?(diff, "device.UpdatedAt.UTC().Add(-anonymousDeviceExpiration)") and
+      String.contains?(diff, "device.UpdatedAt.UTC().Add(time.Minute)")
+  end
+
+  defp grafana_wrong_logger_context?(diff) do
+    String.contains?(
+      diff,
+      ~S|log := d.Log.WithValues("name", name, "kind", options.Kind, "method", method)|
+    ) and
+      String.contains?(diff, "ctx = klog.NewContext(ctx, d.Log)")
+  end
+
+  defp grafana_web_assets_missing_double_check?(diff) do
+    String.contains?(diff, "entryPointAssetsCacheMu.RLock()") and
+      String.contains?(diff, "entryPointAssetsCacheMu.Lock()") and
+      String.contains?(diff, "ret := entryPointAssetsCache")
+  end
+
+  defp grafana_total_docs_race?(diff) do
+    String.contains?(diff, ~S|s.search.TotalDocs()|) and
+      String.contains?(diff, "go func()")
+  end
+
+  defp keycloak_feature_flag_mismatch?(diff) do
+    String.contains?(diff, "Profile.Feature.ADMIN_FINE_GRAINED_AUTHZ") and
+      String.contains?(diff, "AdminPermissions")
+  end
+
+  defp keycloak_picocli_exit?(diff) do
+    String.contains?(diff, "picocli.exit(CompatibilityResult.FEATURE_DISABLED)")
+  end
+
+  defp keycloak_optional_get?(diff) do
+    String.contains?(diff, "RecoveryAuthnCodesUtils.getCredential(user)") and
+      String.contains?(diff, "credentialModelOpt.get()")
+  end
+
   defp ruby_method_override_claim(method),
     do:
       proof_claim(method, "public-static-ruby-method-arity-override", %{
@@ -446,6 +618,548 @@ defmodule Sugary.Reviewers do
         dedupe_key: "public-static-topic-user-nil-deref",
         evidence_summary:
           "The diff assigns `tu = TopicUser.find_by(...)` and dereferences `tu.notification_level` without a nil guard."
+      })
+
+  defp ruby_open_url_ssrf_claim(method),
+    do:
+      proof_claim(method, "public-static-open-url-ssrf", %{
+        claim:
+          "Importing a remote topic calls open(url).read on user-controlled input without validating the destination, creating an SSRF path through Ruby open-uri before the content is imported.",
+        category: "security",
+        severity: "critical",
+        confidence: 0.91,
+        path: "app/jobs/regular/retrieve_topic.rb",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "import_remote receives a URL",
+          "Readability::Document reads open(url)",
+          "no allowlist or private-network validation is visible before the fetch"
+        ],
+        suggested_fix:
+          "Validate scheme and host before fetching and block private, loopback, link-local, and internal destinations.",
+        suggested_test: "Add a remote import regression test for localhost/private-network URLs.",
+        dedupe_key: "public-static-open-url-ssrf",
+        evidence_summary:
+          "The diff adds `Readability::Document.new(open(url).read, ...)` in the remote topic import path."
+      })
+
+  defp allowall_clickjacking_claim(method),
+    do:
+      proof_claim(method, "public-static-x-frame-options-allowall", %{
+        claim:
+          "Setting X-Frame-Options to ALLOWALL disables clickjacking protection, and relying on request.referer host comparison is not a strong framing authorization boundary.",
+        category: "security",
+        severity: "high",
+        confidence: 0.89,
+        path: "app/controllers/embed_controller.rb",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "ensure_embeddable compares request.referer to the configured host",
+          "the response then sets X-Frame-Options: ALLOWALL",
+          "browsers no longer get frame-denial protection for embeddable content"
+        ],
+        suggested_fix:
+          "Use a CSP frame-ancestors policy scoped to the configured embeddable host instead of ALLOWALL.",
+        suggested_test:
+          "Add controller/header coverage proving only the configured host can frame embedded content.",
+        dedupe_key: "public-static-x-frame-options-allowall",
+        evidence_summary:
+          "The diff sets `response.headers['X-Frame-Options'] = \"ALLOWALL\"` after a referer check."
+      })
+
+  defp unhandled_async_find_members_claim(method),
+    do:
+      proof_claim(method, "public-static-unhandled-async-find-members", %{
+        claim:
+          "The controller returns group.findMembers without handling the asynchronous result, so pagination can update the offset before member data has actually loaded.",
+        category: "runtime",
+        severity: "medium",
+        confidence: 0.86,
+        path: "app/assets/javascripts/discourse/controllers/group-index.js",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "next/previous mutates the group's offset",
+          "the action returns group.findMembers()",
+          "no then/await path updates UI state after the asynchronous member load completes"
+        ],
+        suggested_fix:
+          "Handle the promise from findMembers and update loading/error state when it resolves.",
+        suggested_test:
+          "Add a pagination test that waits for findMembers before asserting rendered members.",
+        dedupe_key: "public-static-unhandled-async-find-members",
+        evidence_summary:
+          "The diff returns `group.findMembers();` directly from the pagination action."
+      })
+
+  defp sample_rate_falsy_guard_claim(method),
+    do:
+      proof_claim(method, "public-static-sample-rate-zero-falsy", %{
+        claim:
+          "The sample_rate propagation guard treats client_sample_rate = 0.0 as falsy, so an explicit zero sampling rate is skipped instead of written to normalized_data.",
+        category: "runtime",
+        severity: "high",
+        confidence: 0.93,
+        path: "src/sentry/api/helpers/error_upsampling.py",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "client_sample_rate is read from contexts.error_sampling",
+          "the new code checks `if client_sample_rate:`",
+          "Python treats 0.0 as false and never writes normalized_data['sample_rate']"
+        ],
+        suggested_fix: "Check `client_sample_rate is not None` before converting it to float.",
+        suggested_test:
+          "Add a regression event with client_sample_rate set to 0.0 and assert sample_rate is preserved.",
+        dedupe_key: "public-static-sample-rate-zero-falsy",
+        evidence_summary:
+          "The diff gates `normalized_data[\"sample_rate\"] = float(client_sample_rate)` behind `if client_sample_rate:`."
+      })
+
+  defp refresh_token_literal_claim(method),
+    do:
+      proof_claim(method, "public-static-refresh-token-literal", %{
+        claim:
+          "parseRefreshTokenResponse writes the literal string 'refresh_token' when the OAuth response omits refresh_token, replacing a missing token with an invalid hardcoded credential.",
+        category: "contract",
+        severity: "high",
+        confidence: 0.92,
+        path: "packages/app-store/_utils/oauth/parseRefreshTokenResponse.ts",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "refresh token response passes schema success",
+          "missing refresh_token is replaced with the literal string",
+          "subsequent refreshes use an invalid token value"
+        ],
+        suggested_fix:
+          "Preserve the previous refresh token or fail validation when the provider omits one.",
+        suggested_test: "Add an OAuth refresh test where the provider omits refresh_token.",
+        dedupe_key: "public-static-refresh-token-literal",
+        evidence_summary:
+          "The diff assigns `refreshTokenResponse.data.refresh_token = \"refresh_token\"`."
+      })
+
+  defp fetch_response_data_shape_claim(method),
+    do:
+      proof_claim(method, "public-static-fetch-response-data-shape", %{
+        claim:
+          "The sync endpoint path treats a fetch Response like an axios-style object by reading res?.data; if refreshOAuthTokens returns a Response, token is undefined and token.access_token throws.",
+        category: "runtime",
+        severity: "high",
+        confidence: 0.88,
+        path: "packages/app-store/googlecalendar/lib/CalendarService.ts",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "refreshOAuthTokens can return a fetch Response",
+          "new code reads const token = res?.data",
+          "fetch Response does not expose .data, so token.access_token dereferences undefined"
+        ],
+        suggested_fix:
+          "Normalize refreshOAuthTokens to one return shape or parse Response JSON before reading token fields.",
+        suggested_test:
+          "Add coverage for the sync endpoint refresh path returning a fetch Response.",
+        dedupe_key: "public-static-fetch-response-data-shape",
+        evidence_summary:
+          "The diff reads `const token = res?.data` immediately before `token.access_token`."
+      })
+
+  defp email_blacklist_case_sensitive_claim(method),
+    do:
+      proof_claim(method, "public-static-email-blacklist-case-sensitive", %{
+        claim:
+          "The blacklist entries are lowercased but guest emails are compared without lowercasing, so a case-variant guest email can bypass BLACKLISTED_GUEST_EMAILS.",
+        category: "security",
+        severity: "medium",
+        confidence: 0.9,
+        path: "packages/trpc/server/routers/viewer/bookings/addGuests.handler.ts",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "environment blacklist entries are mapped through email.toLowerCase()",
+          "uniqueGuests filters with blacklistedGuestEmails.includes(guest)",
+          "guest is not normalized before comparison"
+        ],
+        suggested_fix:
+          "Normalize guest emails to lowercase before blacklist and duplicate checks.",
+        suggested_test:
+          "Add an add-guests test where a blacklisted address differs only by case.",
+        dedupe_key: "public-static-email-blacklist-case-sensitive",
+        evidence_summary:
+          "The diff lowercases blacklist entries but checks `blacklistedGuestEmails.includes(guest)`."
+      })
+
+  defp retry_count_stale_increment_claim(method),
+    do:
+      proof_claim(method, "public-static-retry-count-stale-increment", %{
+        claim:
+          "Using retryCount: reminder.retryCount + 1 reads a possibly stale value and can lose increments under concurrency; use Prisma atomic increment: 1 instead, including in the similar catch-block update.",
+        category: "runtime",
+        severity: "medium",
+        confidence: 0.89,
+        path: "packages/features/ee/workflows/api/scheduleSMSReminders.ts",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "retryCount is selected into the reminder record",
+          "later updates write retryCount: reminder.retryCount + 1",
+          "concurrent retries can read the same value and overwrite each other",
+          "the same non-atomic pattern appears in the catch block"
+        ],
+        suggested_fix: "Use Prisma's atomic increment operation for retryCount.",
+        suggested_test:
+          "Add a concurrent retry scheduling test that verifies both increments are preserved.",
+        dedupe_key: "public-static-retry-count-stale-increment",
+        evidence_summary:
+          "The diff writes `retryCount: reminder.retryCount + 1` in workflowReminder updates instead of Prisma `increment: 1`."
+      })
+
+  defp github_authenticated_state_missing_claim(method),
+    do:
+      proof_claim(method, "public-static-github-authenticated-state-missing", %{
+        claim:
+          "The installation step fetches github_authenticated_user from pipeline state and compares it directly; if that state is missing, the flow rejects a valid installation instead of handling the missing state explicitly.",
+        category: "runtime",
+        severity: "medium",
+        confidence: 0.84,
+        path: "src/sentry/integrations/github/integration.py",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "one step binds github_authenticated_user",
+          "a later step fetches the state without a missing-state guard",
+          "the comparison against integration metadata fails when the state is absent"
+        ],
+        suggested_fix:
+          "Handle missing pipeline state by restarting the authentication step or returning a specific recoverable error.",
+        suggested_test:
+          "Add an installation callback test with missing github_authenticated_user state.",
+        dedupe_key: "public-static-github-authenticated-state-missing",
+        evidence_summary:
+          "The diff compares `pipeline.fetch_state(\"github_authenticated_user\")` to integration sender login."
+      })
+
+  defp dataclass_eager_timestamp_claim(method),
+    do:
+      proof_claim(method, "public-static-dataclass-eager-timestamp", %{
+        claim:
+          "The dataclass field queued: datetime = timezone.now() is evaluated at class definition time, so instances share a stale timestamp instead of getting creation time.",
+        category: "runtime",
+        severity: "medium",
+        confidence: 0.9,
+        path: "src/sentry/integrations/services/assignment_source.py",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "AssignmentSource is a dataclass",
+          "queued defaults to timezone.now()",
+          "Python evaluates the default once when the class is defined"
+        ],
+        suggested_fix: "Use field(default_factory=timezone.now) for the queued timestamp.",
+        suggested_test:
+          "Add a test that creates two AssignmentSource values at different times and compares queued.",
+        dedupe_key: "public-static-dataclass-eager-timestamp",
+        evidence_summary: "The diff adds `queued: datetime = timezone.now()` inside a dataclass."
+      })
+
+  defp monitor_config_returns_original_claim(method),
+    do:
+      proof_claim(method, "public-static-monitor-config-return-original", %{
+        claim:
+          "get_monitor_environment_context mutates a copied config with display values but returns monitor_environment.monitor.config, so callers never receive the modified config.",
+        category: "runtime",
+        severity: "medium",
+        confidence: 0.91,
+        path: "src/sentry/monitors/logic/incident_occurrence.py",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "config is copied from monitor_environment.monitor.config",
+          "schedule_type is rewritten on the copy",
+          "the returned map uses the original monitor.config"
+        ],
+        suggested_fix: "Return the local `config` variable after applying display-value changes.",
+        suggested_test:
+          "Add context rendering coverage that expects the schedule_type display value.",
+        dedupe_key: "public-static-monitor-config-return-original",
+        evidence_summary:
+          "The diff assigns `config = monitor_environment.monitor.config.copy()` but returns `\"config\": monitor_environment.monitor.config`."
+      })
+
+  defp grafana_rule_list_item_missing_key_claim(method),
+    do:
+      proof_claim(method, "public-static-grafana-rule-list-missing-key", %{
+        claim:
+          "The Grafana rule map now renders GrafanaRuleListItem without a key prop after removing the keyed loader component, so React cannot stably reconcile rule list items.",
+        category: "runtime",
+        severity: "medium",
+        confidence: 0.88,
+        path: "public/app/features/alerting/unified/rule-list/GrafanaGroupLoader.tsx",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "the grafana case previously rendered a component with key={key}",
+          "the new branch renders GrafanaRuleListItem directly",
+          "no replacement key prop is provided on that list item"
+        ],
+        suggested_fix: "Pass a stable key such as rule.uid to GrafanaRuleListItem.",
+        suggested_test:
+          "Add a list rendering test that asserts every mapped Grafana rule has a key.",
+        dedupe_key: "public-static-grafana-rule-list-missing-key",
+        evidence_summary:
+          "The diff removes `key={key}` while replacing GrafanaRuleLoader with GrafanaRuleListItem."
+      })
+
+  defp grafana_nil_plugin_context_claim(method),
+    do:
+      proof_claim(method, "public-static-grafana-nil-plugin-context", %{
+        claim:
+          "ContextualLoggerMiddleware dereferences req.PluginContext before checking req for nil, so QueryData, CallResource, CheckHealth, and CollectMetrics can panic on nil requests.",
+        category: "runtime",
+        severity: "high",
+        confidence: 0.91,
+        path: "pkg/services/pluginsintegration/clientmiddleware/contextual_logger_middleware.go",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "middleware methods accept request pointers",
+          "each method passes req.PluginContext into instrumentContext",
+          "nil request inputs panic before reaching the wrapped client"
+        ],
+        suggested_fix:
+          "Preserve the existing nil request guards before calling instrumentContext.",
+        suggested_test:
+          "Add nil request regression tests for each ContextualLoggerMiddleware method.",
+        dedupe_key: "public-static-grafana-nil-plugin-context",
+        evidence_summary:
+          "The diff adds ContextualLoggerMiddleware methods that call `instrumentContext(..., req.PluginContext)`."
+      })
+
+  defp grafana_exec_args_splat_claim(method),
+    do:
+      proof_claim(method, "public-static-grafana-exec-interface-splat", %{
+        claim:
+          "dbSession.Exec(args...) is called after prepending query to a []interface{}, but Exec expects the SQL string as the first typed argument, so this []interface{} splat can fail to compile.",
+        category: "runtime",
+        severity: "high",
+        confidence: 0.93,
+        path: "pkg/services/anonymous/anonimpl/anonstore/database.go",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "query is prepended into args as interface{}",
+          "dbSession.Exec(args...) expands []interface{}",
+          "the Exec signature expects a string query followed by variadic arguments"
+        ],
+        suggested_fix:
+          "Call dbSession.Exec(query, args...) without adding query to the args slice.",
+        suggested_test: "Add a compile-time or unit test around updateDevice.",
+        dedupe_key: "public-static-grafana-exec-interface-splat",
+        evidence_summary:
+          "The diff builds `args = append([]interface{}{query}, args...)` and then calls `dbSession.Exec(args...)`."
+      })
+
+  defp grafana_device_limit_ambiguous_claim(method),
+    do:
+      proof_claim(method, "public-static-grafana-device-limit-ambiguous", %{
+        claim:
+          "updateDevice returns ErrDeviceLimitReached whenever RowsAffected is zero, but zero rows can also mean the device does not exist or is outside the time window.",
+        category: "runtime",
+        severity: "medium",
+        confidence: 0.86,
+        path: "pkg/services/anonymous/anonimpl/anonstore/database.go",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "updateDevice runs an UPDATE with filters",
+          "RowsAffected == 0 maps directly to ErrDeviceLimitReached",
+          "no branch distinguishes missing device from actual device-limit state"
+        ],
+        suggested_fix:
+          "Return a more specific not-found/stale-device error or check the limit condition separately.",
+        suggested_test:
+          "Add a test where the device ID does not exist while the limit is reached.",
+        dedupe_key: "public-static-grafana-device-limit-ambiguous",
+        evidence_summary:
+          "The diff returns ErrDeviceLimitReached solely from a zero RowsAffected result."
+      })
+
+  defp grafana_device_time_window_claim(method),
+    do:
+      proof_claim(method, "public-static-grafana-device-time-window", %{
+        claim:
+          "The device update window is anchored to device.UpdatedAt for both lower and upper bounds, which can diverge from the intended current-time expiration window.",
+        category: "runtime",
+        severity: "medium",
+        confidence: 0.84,
+        path: "pkg/services/anonymous/anonimpl/anonstore/database.go",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "the UPDATE lower bound uses device.UpdatedAt minus anonymousDeviceExpiration",
+          "the upper bound uses device.UpdatedAt plus one minute",
+          "the surrounding limit logic counts devices relative to time.Now().UTC()"
+        ],
+        suggested_fix:
+          "Use a single now := time.Now().UTC() reference for expiration and update-window comparisons.",
+        suggested_test:
+          "Add an updateDevice test where device.UpdatedAt differs materially from current time.",
+        dedupe_key: "public-static-grafana-device-time-window",
+        evidence_summary:
+          "The diff uses `device.UpdatedAt.UTC().Add(...)` for the update window predicates."
+      })
+
+  defp grafana_wrong_logger_context_claim(method),
+    do:
+      proof_claim(method, "public-static-grafana-wrong-logger-context", %{
+        claim:
+          "Delete builds a contextual log value with name, kind, and method, but stores d.Log in the context instead of the enriched log variable, dropping the intended fields.",
+        category: "runtime",
+        severity: "medium",
+        confidence: 0.87,
+        path: "pkg/apiserver/rest/dualwriter_mode3.go",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "Delete creates log := d.Log.WithValues(...)",
+          "the context is set with d.Log instead of log",
+          "downstream logging lacks the method/name/kind context"
+        ],
+        suggested_fix: "Pass the enriched `log` value to klog.NewContext.",
+        suggested_test:
+          "Add logging-context coverage for Delete including name, kind, and method fields.",
+        dedupe_key: "public-static-grafana-wrong-logger-context",
+        evidence_summary:
+          "The diff has `log := d.Log.WithValues(...)` followed by `ctx = klog.NewContext(ctx, d.Log)`."
+      })
+
+  defp grafana_web_assets_double_check_claim(method),
+    do:
+      proof_claim(method, "public-static-grafana-web-assets-double-check", %{
+        claim:
+          "GetWebAssets checks entryPointAssetsCache under an RLock, then takes the write lock without re-checking the cache, so multiple goroutines can fetch and overwrite the cache unnecessarily.",
+        category: "runtime",
+        severity: "medium",
+        confidence: 0.87,
+        path: "pkg/api/webassets/webassets.go",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "one goroutine observes nil cache under RLock",
+          "another goroutine can populate the cache before the first gets Lock",
+          "the first goroutine does not re-check before fetching"
+        ],
+        suggested_fix:
+          "Re-check entryPointAssetsCache after acquiring the write lock and return it if populated.",
+        suggested_test: "Add a concurrent GetWebAssets test that verifies only one fetch occurs.",
+        dedupe_key: "public-static-grafana-web-assets-double-check",
+        evidence_summary:
+          "The diff adds RLock/Lock around entryPointAssetsCache but no second cache check after Lock."
+      })
+
+  defp grafana_total_docs_race_claim(method),
+    do:
+      proof_claim(method, "public-static-grafana-total-docs-race", %{
+        claim:
+          "Logging s.search.TotalDocs during initialization can race with the event watcher goroutine because TotalDocs iterates the search cache while BuildIndex may write concurrently.",
+        category: "runtime",
+        severity: "high",
+        confidence: 0.86,
+        path: "pkg/services/store/kind/search_support.go",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "init starts an event watcher goroutine",
+          "the new log line calls s.search.TotalDocs",
+          "search cache reads can overlap with concurrent index writes"
+        ],
+        suggested_fix:
+          "Avoid TotalDocs on the shared cache without synchronization or expose a thread-safe count.",
+        suggested_test: "Run the search init/event watcher path under Go's race detector.",
+        dedupe_key: "public-static-grafana-total-docs-race",
+        evidence_summary:
+          "The diff logs `s.search.TotalDocs()` after starting a goroutine that handles index events."
+      })
+
+  defp keycloak_feature_flag_mismatch_claim(method),
+    do:
+      proof_claim(method, "public-static-keycloak-admin-fga-flag-mismatch", %{
+        claim:
+          "Admin permission cleanup is guarded by ADMIN_FINE_GRAINED_AUTHZ even though the surrounding admin authorization work uses the V2 feature flag, leaving orphaned permissions when only V2 is enabled.",
+        category: "authorization",
+        severity: "high",
+        confidence: 0.86,
+        path:
+          "services/src/main/java/org/keycloak/services/resources/admin/permissions/AdminPermissions.java",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "cleanup listener handles role/client/group removal",
+          "the new guard checks ADMIN_FINE_GRAINED_AUTHZ",
+          "V2-only deployments skip cleanup and leave permission data behind"
+        ],
+        suggested_fix:
+          "Guard cleanup with the same ADMIN_FINE_GRAINED_AUTHZ_V2-compatible condition as the rest of the admin permission code.",
+        suggested_test:
+          "Add a V2-only feature flag test that removes a role/client/group and asserts permissions are cleaned.",
+        dedupe_key: "public-static-keycloak-admin-fga-flag-mismatch",
+        evidence_summary:
+          "The diff adds an AdminPermissions cleanup guard using `Profile.Feature.ADMIN_FINE_GRAINED_AUTHZ`."
+      })
+
+  defp keycloak_picocli_exit_claim(method),
+    do:
+      proof_claim(method, "public-static-keycloak-picocli-direct-exit", %{
+        claim:
+          "Calling picocli.exit from the command run method invokes the CLI exit path directly, which can terminate the process instead of returning a testable command result.",
+        category: "runtime",
+        severity: "medium",
+        confidence: 0.84,
+        path:
+          "quarkus/runtime/src/main/java/org/keycloak/quarkus/runtime/cli/command/UpdateCompatibilityCheck.java",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "run checks whether ROLLING_UPDATES is disabled",
+          "the branch calls picocli.exit",
+          "direct exit handling bypasses normal return/error propagation"
+        ],
+        suggested_fix:
+          "Return or throw a command exception that the top-level CLI can translate into an exit code.",
+        suggested_test:
+          "Add command tests proving the disabled-feature path does not call System.exit.",
+        dedupe_key: "public-static-keycloak-picocli-direct-exit",
+        evidence_summary:
+          "The diff adds `picocli.exit(CompatibilityResult.FEATURE_DISABLED)` inside run methods."
+      })
+
+  defp keycloak_optional_get_claim(method),
+    do:
+      proof_claim(method, "public-static-keycloak-optional-get-recovery-codes", %{
+        claim:
+          "RecoveryAuthnCodesUtils.getCredential returns an Optional, but the caller immediately uses credentialModelOpt.get() without checking isPresent, so users without that credential hit NoSuchElementException.",
+        category: "runtime",
+        severity: "high",
+        confidence: 0.9,
+        path:
+          "services/src/main/java/org/keycloak/forms/login/freemarker/model/RecoveryAuthnCodeInputLoginBean.java",
+        start_line: 1,
+        end_line: 1,
+        failure_path: [
+          "getCredential(user) returns Optional<CredentialModel>",
+          "the caller passes credentialModelOpt.get() to createFromCredentialModel",
+          "empty Optional throws before the login model can render"
+        ],
+        suggested_fix:
+          "Handle the empty Optional explicitly before reading the credential model.",
+        suggested_test:
+          "Add recovery-code rendering coverage for a user without a recovery-code credential.",
+        dedupe_key: "public-static-keycloak-optional-get-recovery-codes",
+        evidence_summary:
+          "The diff replaces a stream findFirst().get() with `RecoveryAuthnCodesUtils.getCredential(user)` but still calls `.get()`."
       })
 
   defp null_guard(method),

@@ -141,4 +141,90 @@ defmodule Sugary.PublicStaticProofGateTest do
     assert score.published_claims == 4
     assert score.f1 == 1.0
   end
+
+  test "scores static proof v2 patterns as public benchmark hits" do
+    cases = [
+      public_case(
+        "public-proof-v2-sample-rate",
+        ~S"""
+        +    if client_sample_rate:
+        +        try:
+        +            normalized_data["sample_rate"] = float(client_sample_rate)
+        +        except Exception:
+        +            pass
+        """,
+        [
+          %{
+            id: "sample-rate-zero",
+            description:
+              "sample_rate = 0.0 is falsy and skipped when client_sample_rate is guarded with if client_sample_rate.",
+            category: "public_benchmark",
+            severity: "high",
+            path: "unknown"
+          }
+        ]
+      ),
+      public_case(
+        "public-proof-v2-retry-count",
+        """
+        +          await prisma.workflowReminder.update({
+        +            data: {
+        +              retryCount: reminder.retryCount + 1,
+        +            },
+        +          });
+        """,
+        [
+          %{
+            id: "retry-count-stale",
+            description:
+              "Using retryCount: reminder.retryCount + 1 reads a stale value and can lose increments under concurrency.",
+            category: "public_benchmark",
+            severity: "medium",
+            path: "unknown"
+          }
+        ]
+      ),
+      public_case(
+        "public-proof-v2-grafana-exec",
+        """
+        +  args = append([]interface{}{query}, args...)
+        +  result, err := dbSession.Exec(args...)
+        """,
+        [
+          %{
+            id: "exec-interface-splat",
+            description:
+              "dbSession.Exec(args...) is given a []interface{} where Exec requires a string query first.",
+            category: "public_benchmark",
+            severity: "high",
+            path: "unknown"
+          }
+        ]
+      ),
+      public_case(
+        "public-proof-v2-keycloak-optional",
+        """
+        +  Optional<CredentialModel> credentialModelOpt = RecoveryAuthnCodesUtils.getCredential(user);
+        +  RecoveryAuthnCodesCredentialModel recoveryCodeCredentialModel = RecoveryAuthnCodesCredentialModel.createFromCredentialModel(credentialModelOpt.get());
+        """,
+        [
+          %{
+            id: "optional-get",
+            description:
+              "Calling Optional.get() on RecoveryAuthnCodesUtils.getCredential(user) without checking isPresent can throw NoSuchElementException.",
+            category: "public_benchmark",
+            severity: "high",
+            path: "unknown"
+          }
+        ]
+      )
+    ]
+
+    results = Enum.map(cases, &Sugary.Pipeline.run_case(&1, method()))
+    score = Sugary.Scorer.score(method().id, results)
+
+    assert score.hits == 4
+    assert score.noise == 0
+    assert score.published_claims == 4
+  end
 end

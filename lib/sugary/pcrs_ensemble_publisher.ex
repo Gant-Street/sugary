@@ -231,6 +231,14 @@ defmodule Sugary.PCRSEnsemblePublisher do
       pool: :tail,
       family: "pcrs_contract_specialist",
       source_prior: 0.47
+    },
+    %{
+      run: ".sugary/research/runs/20260531T001509Z-martian-pcrs-v3-static-patterns-candidate",
+      method: "public-static-proof-gate",
+      source: "v3-static-patterns-proof",
+      pool: :tail,
+      family: "pcrs_static_patterns",
+      source_prior: 0.54
     }
   ]
 
@@ -377,6 +385,21 @@ defmodule Sugary.PCRSEnsemblePublisher do
       diagnostic: true,
       hypothesis:
         "Raw recall diagnostic. This can expose publisher ceiling but is not eligible for promotion or product default."
+    },
+    %{
+      id: "raw-recall-diagnostic-budget160-deduped-max6",
+      mode: "raw_f1_diagnostic",
+      budget_tier: 160,
+      strategy: "deduped_posterior",
+      threshold: 0.0,
+      max_per_pr: 6,
+      total_budget: 160,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      eligible_for_promotion: false,
+      diagnostic: true,
+      hypothesis:
+        "Wide non-promotable diagnostic. Measures whether the verified candidate pool can surface at least 70 true positives when ranking is allowed to spend recall budget."
     },
     %{
       id: "frontier-balanced-budget62-source2-qualified-triad",
@@ -1077,6 +1100,13 @@ defmodule Sugary.PCRSEnsemblePublisher do
     candidates
     |> Enum.filter(&(allowed_by_policy?(&1, base_policy) or supplemental_allowed?(&1, policy)))
     |> Enum.sort_by(&supplemental_score(&1, policy), :desc)
+  end
+
+  defp policy_case_candidates(candidates, %{strategy: "deduped_posterior"} = policy) do
+    candidates
+    |> Enum.filter(&allowed_by_policy?(&1, policy))
+    |> Enum.filter(&(policy_posterior(&1, policy) >= policy.threshold))
+    |> Enum.sort_by(&policy_posterior(&1, policy), :desc)
   end
 
   defp policy_case_candidates(candidates, policy) do

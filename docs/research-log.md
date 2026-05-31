@@ -1038,3 +1038,84 @@ Interpretation:
 - Contract specialization added a Sentry miss and improved the trust/default publisher, but it was still noisy as a standalone reviewer.
 - The deduped judge-risk publisher moved the qualified policy across the precision/noise gates, but not the F1/hit gates.
 - The active bottleneck is still candidate generation, not publishing. We need roughly 9 more unique local-gold hits in the candidate pool before the 90/137 target is reachable.
+
+## 2026-05-30: PCRS v3 Static Proof Patterns + Deduped Publisher Fix
+
+Checkpoint:
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: local no-key proxy gates cleared
+official Martian score: not claimed
+Martian API key used: no
+```
+
+What changed:
+
+- Added deterministic static proof patterns v2 as a no-key candidate source.
+- Kept the variable scoped: no new model, no external API, no official submission.
+- Corrected static proof paths so tail verification can distinguish changed-file proof from loose text matches.
+- Fixed a publisher materialization bug where `deduped_posterior` could globally select a candidate that was later dropped because only the local top `max_per_pr` candidates were materialized for scoring.
+- Added a non-promotable wide raw diagnostic policy to measure recall ceiling separately from shippable review modes.
+
+Command sequence:
+
+```sh
+./sugary experiment run experiments/martian-pcrs-v3-static-patterns-candidate.toml --replay-mode refresh
+./sugary pcrs ensemble publisher --limit 50 --id pcrs-ensemble-v3-static-patterns-wide-raw
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260531T001945Z-pcrs-ensemble-v3-static-patterns-wide-raw --method posterior-max1-plus-source5-qualified-triad-budget52 --tool sugary-pcrs-v3-trust-static --model-dir sugary_pcrs_v3_trust_static --id pcrs-v3-trust-static-parity --policy raw
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260531T001945Z-pcrs-ensemble-v3-static-patterns-wide-raw --method qualified-f1-judge-risk-budget84-max3 --tool sugary-pcrs-v3-qualified-static --model-dir sugary_pcrs_v3_qualified_static --id pcrs-v3-qualified-static-parity --policy raw
+./sugary martian parity export --source-run .sugary/research/pcrs-ensemble-publisher/20260531T001945Z-pcrs-ensemble-v3-static-patterns-wide-raw --method raw-recall-diagnostic-budget160-deduped-max6 --tool sugary-pcrs-v3-raw-static-diagnostic --model-dir sugary_pcrs_v3_raw_static_diagnostic --id pcrs-v3-raw-static-diagnostic-parity --policy raw
+./sugary martian no-key report --sugary-tool sugary-pcrs-v3-trust-static --model-dir sugary_pcrs_v3_trust_static --id pcrs-v3-trust-static-no-key
+./sugary martian no-key report --sugary-tool sugary-pcrs-v3-qualified-static --model-dir sugary_pcrs_v3_qualified_static --id pcrs-v3-qualified-static-no-key
+./sugary martian no-key report --sugary-tool sugary-pcrs-v3-raw-static-diagnostic --model-dir sugary_pcrs_v3_raw_static_diagnostic --id pcrs-v3-raw-static-diagnostic-no-key
+```
+
+Run artifacts:
+
+```text
+.sugary/research/runs/20260531T001509Z-martian-pcrs-v3-static-patterns-candidate
+.sugary/research/pcrs-ensemble-publisher/20260531T001945Z-pcrs-ensemble-v3-static-patterns-wide-raw
+.sugary/research/martian-parity/20260531T002108Z-pcrs-v3-trust-static-parity
+.sugary/research/martian-parity/20260531T002118Z-pcrs-v3-qualified-static-parity
+.sugary/research/martian-parity/20260531T002127Z-pcrs-v3-raw-static-diagnostic-parity
+.sugary/research/martian-no-key/20260531T002114Z-pcrs-v3-trust-static-no-key
+.sugary/research/martian-no-key/20260531T002122Z-pcrs-v3-qualified-static-no-key
+.sugary/research/martian-no-key/20260531T002131Z-pcrs-v3-raw-static-diagnostic-no-key
+```
+
+Final publisher result:
+
+| Gate | Result |
+| --- | --- |
+| Trust/default F1 >= 0.455 | pass: 0.466 |
+| Trust/default precision >= 0.820 | pass: 0.846 |
+| Qualified F1 >= 0.545 | pass: 0.552 |
+| Qualified precision >= 0.720 | pass: 0.726 |
+| Qualified hits >= 61 | pass: 61 |
+| Qualified noise <= 23 | pass: 23 |
+| Candidate-pool hits >= 90 | pass: 101 |
+| Candidate-pool oracle recall >= 90/137 | pass: 0.737 |
+| Raw diagnostic hits >= 70 | pass: 86 |
+| Repo groups passing or diagnosed | pass |
+
+Key policy results:
+
+| Policy | Hits | Noise | Precision | Recall | F1 | Comments |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `posterior-max1-plus-source5-qualified-triad-budget52` | 44 | 8 | 0.846 | 0.321 | 0.466 | 52 |
+| `qualified-f1-judge-risk-budget84-max3` | 61 | 23 | 0.726 | 0.445 | 0.552 | 84 |
+| `raw-recall-diagnostic-budget160-deduped-max6` | 86 | 66 | 0.566 | 0.628 | 0.595 | 152 |
+
+Static proof source result:
+
+| Reviewer | Hits | Noise | Precision | F1 | Unique hits over v3b pool |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `public-static-proof-gate` v2 | 24 | 2 | 0.923 | 0.294 | 20 |
+
+Interpretation:
+
+- This clears the local no-key proxy target, not an official Martian score.
+- The most important result is not the raw diagnostic score; that policy is intentionally non-promotable and noisy.
+- The useful product-shaped result is the qualified policy crossing the F1/hits/precision/noise gates after the candidate pool gained static proof coverage and the deduped publisher bug was fixed.
+- The next research question is generalization: these deterministic patterns helped the first 50 local Martian cases, so the next loop should test whether the same proof-pattern class transfers to a separate offset/holdout slice without adding benchmark-specific leakage.

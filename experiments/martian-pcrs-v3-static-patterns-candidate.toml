@@ -1,0 +1,11 @@
+id = "martian-pcrs-v3-static-patterns-candidate"
+description = "No-key PCRS v3 candidate source: deterministic static proof patterns v2 on the first 50 Martian offline cases. Unofficial local smoke only."
+suite = "martian-offline"
+limit = 50
+replay_mode = "refresh"
+max_cost_usd = 0.00
+max_duration_seconds = 1200
+
+[[methods]]
+id = "public-static-proof-gate"
+reviewer = "public-static-proof-gate"
