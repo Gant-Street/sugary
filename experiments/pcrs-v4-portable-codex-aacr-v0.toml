@@ -1,0 +1,36 @@
+id = "pcrs-v4-portable-codex-aacr-v0"
+description = "Unofficial AACR local smoke for a benchmark-agnostic portable Codex repo reviewer. Not an official benchmark score."
+suite = "aacr-bench"
+limit = 50
+replay_mode = "cache-first"
+max_cost_usd = 0.00
+max_duration_seconds = 14400
+
+[[methods]]
+id = "baseline-diff-only"
+reviewer = "baseline-diff-only"
+
+[[methods]]
+id = "public-static-proof-gate"
+reviewer = "public-static-proof-gate"
+
+[[reviewers]]
+id = "pcrs-v4-portable-codex-repo-low"
+type = "command"
+enabled = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_repo_reviewer.exs"]
+timeout_ms = 180000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+include_workspace = true
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "repo_optional", "benchmark_agnostic"]
+evidence = "none"
+refutation = "generic_refuter_stub"
+ranking = "expected_value_stub"
+env = ["SUGARY_REVIEWER_ID=pcrs-v4-portable-codex-repo-low", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000", "SUGARY_CODEX_REVIEW_FOCUS=Benchmark-agnostic code review. Look for concrete bugs, security issues, contract violations, runtime failures, and meaningful missing tests. Avoid style-only comments, benchmark names, and fixture-shaped reasoning."]

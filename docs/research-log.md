@@ -1183,3 +1183,80 @@ Interpretation:
 - This is useful negative evidence, not a product failure. It means the prior win was dominated by Martian-specific candidate-source coverage.
 - The next high-value loop should not tune AACR-specific patterns. It should introduce one benchmark-agnostic variable at a time: repo-aware retrieval, a real model-backed candidate generator, or a small proof tool that can produce claims across projects.
 - The transfer gate itself is now useful infrastructure: it prevents us from mistaking local benchmark optimization for general review capability.
+
+## 2026-05-31: PCRS v4 Portable Candidate Generator Transfer Gate
+
+Checkpoint:
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: mixed/negative transfer result
+official benchmark score: not claimed
+Martian API key used: no
+AACR API key used: no
+model boundary: Codex CLI command reviewer
+```
+
+What changed:
+
+- Added `sugary pcrs portable transfer gate`.
+- Added a benchmark-agnostic portable Codex repo reviewer variable:
+  `pcrs-v4-portable-codex-repo-low`.
+- The reviewer receives only sanitized `ReviewInputBundle` JSON.
+- If a local base/head checkout exists, Sugary passes blinded workspace paths.
+- Added candidate-pool metrics, published metrics, static-proof ablation, leakage reporting, workspace reporting, and Martian publisher guardrails.
+- Added first-class experiment manifests for Martian and AACR portable transfer runs.
+
+Command:
+
+```sh
+mix run -e 'IO.puts(Sugary.PortableTransferGate.run!(%{"id" => "pcrs-v4-portable-transfer-first50", "suites" => "martian-offline,aacr-bench", "limit" => 50, "replay-mode" => "cache-first"}))'
+```
+
+Run artifacts:
+
+```text
+.sugary/research/transfer-gates/20260531T153346Z-pcrs-v4-portable-transfer-first50
+.sugary/research/runs/20260531T153346Z-pcrs-v4-portable-transfer-first50-martian-offline
+.sugary/research/runs/20260531T161920Z-pcrs-v4-portable-transfer-first50-aacr-bench
+.sugary/research/pcrs-ensemble-publisher/20260531T163040Z-pcrs-v4-portable-transfer-first50-martian-publisher
+```
+
+Standalone first-50 transfer result:
+
+| Suite | Method | Workspace Inputs | Expected | Pool Hits | Pool Claims | Published Hits | Noise | Precision | Recall | F1 | Comments |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Martian | `public-static-proof-gate` | 50 / 50 | 137 | 24 | 26 | 24 | 2 | 0.923 | 0.175 | 0.294 | 26 |
+| Martian | `pcrs-v4-portable-codex-repo-low` | 50 / 50 | 137 | 36 | 63 | 36 | 27 | 0.571 | 0.263 | 0.360 | 63 |
+| AACR | `public-static-proof-gate` | 0 / 50 | 467 | 0 | 0 | 0 | 0 | 0.000 | 0.000 | 0.000 | 0 |
+| AACR | `pcrs-v4-portable-codex-repo-low` | 0 / 50 | 467 | 7 | 41 | 7 | 35 | 0.171 | 0.015 | 0.028 | 41 |
+
+Martian publisher guardrail with the portable source added as a tail source:
+
+| Policy | Hits | Noise | Precision | Recall | F1 | Comments | Gate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `posterior-max1-plus-source5-qualified-triad-budget52` | 44 | 8 | 0.846 | 0.321 | 0.466 | 52 | miss exact F1 floor by 0.0004 |
+| `qualified-f1-judge-risk-budget84-max3` | 62 | 22 | 0.738 | 0.453 | 0.561 | 84 | pass |
+
+Leakage checks:
+
+| Check | Martian | AACR |
+| --- | --- | --- |
+| Input case-id leaks | pass | pass |
+| Oracle input files | pass | pass |
+| Official/API submission | pass | pass |
+
+Interpretation:
+
+- The portable model-backed source is useful on Martian as a candidate generator: it increases standalone hits from 24 to 36 and F1 from 0.294 to 0.360.
+- Raw portable publication is too noisy for product defaults: Martian precision drops from 0.923 to 0.571.
+- The existing Martian qualified publisher can absorb the portable source and improve over the previous qualified checkpoint: 62 hits / 22 noise / 0.561 F1.
+- The trust/default guard is effectively flat but misses the strict exact F1 floor by 0.0004 because the target was rounded to 0.466.
+- AACR transfer fails. The portable source finds only 7 of 467 scorer-only reference claims and publishes at 0.171 precision. This does not meet the target of 10 candidate-pool hits and 0.500 published precision.
+- The most likely cause is missing repo context plus weak cross-benchmark claim matching. AACR first-50 had 0 materialized workspaces; Martian had 50.
+
+Next research implication:
+
+- Do not tune AACR-specific static patterns.
+- The next variable should be benchmark-agnostic repo context for AACR, probably partial/sparse repository materialization or changed-file/callsite retrieval that avoids full huge-repo checkout.
+- After AACR has comparable repo context, rerun the same portable reviewer before changing model, prompt, or publisher.

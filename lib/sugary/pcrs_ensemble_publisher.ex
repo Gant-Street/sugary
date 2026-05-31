@@ -487,7 +487,8 @@ defmodule Sugary.PCRSEnsemblePublisher do
     id = Keyword.get(opts, :id, "pcrs-ensemble-publisher-v0")
     baseline_run = Keyword.get(opts, :baseline_run, @default_baseline_run)
     candidate_run = Keyword.get(opts, :candidate_run, @default_candidate_run)
-    sources = sources(baseline_run, candidate_run)
+    extra_sources = opts |> Keyword.get(:extra_sources, []) |> List.wrap()
+    sources = sources(baseline_run, candidate_run) ++ Enum.map(extra_sources, &normalize_source/1)
     cases = Sugary.PublicBenchmarks.load_cases!(suite, limit: limit, offset: offset)
     out_dir = make_out_dir(id)
 
@@ -570,6 +571,22 @@ defmodule Sugary.PCRSEnsemblePublisher do
 
   defp maybe_replace_run(source, old, new),
     do: if(source.run == old, do: %{source | run: new}, else: source)
+
+  defp normalize_source(source) do
+    source = atomize(source)
+
+    %{
+      run: Map.fetch!(source, :run),
+      method: Map.fetch!(source, :method),
+      source: Map.fetch!(source, :source),
+      pool: source |> Map.get(:pool, :tail) |> normalize_pool(),
+      family: Map.get(source, :family, Map.fetch!(source, :source)),
+      source_prior: Map.get(source, :source_prior, 0.5)
+    }
+  end
+
+  defp normalize_pool(pool) when is_binary(pool), do: String.to_atom(pool)
+  defp normalize_pool(pool), do: pool
 
   defp baseline_report(run, cases) do
     results =

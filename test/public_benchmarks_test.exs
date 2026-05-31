@@ -371,6 +371,43 @@ defmodule Sugary.PublicBenchmarksTest do
     end)
   end
 
+  test "portable transfer gate reports candidate pool and leakage status" do
+    File.rm_rf(".sugary/research/transfer-gates")
+    dir = mock_benchmark_dir("martian-offline")
+
+    with_env("MARTIAN_BENCH_DIR", dir, fn ->
+      transfer_dir =
+        Sugary.PortableTransferGate.run!(%{
+          "id" => "portable-transfer-gate-test",
+          "suites" => "martian-offline",
+          "limit" => 1,
+          "publisher" => false,
+          "required-executable" => "elixir",
+          "args" => ["scripts/sample_command_reviewer.exs"]
+        })
+
+      on_exit(fn -> File.rm_rf(transfer_dir) end)
+
+      scorecard = Sugary.Json.read!(Path.join(transfer_dir, "portable-transfer-scorecard.json"))
+      report = File.read!(Path.join(transfer_dir, "portable-transfer-report.md"))
+
+      assert report =~ "PCRS v4 Portable Transfer Gate"
+      assert report =~ "Portable candidate source"
+      assert get_in(scorecard, ["suites", Access.at(0), "leakage", "fatal?"]) == false
+
+      portable =
+        get_in(scorecard, [
+          "suites",
+          Access.at(0),
+          "methods",
+          "pcrs-v4-portable-codex-repo-low"
+        ])
+
+      assert get_in(portable, ["candidate_pool", "claims"]) == 1
+      assert is_integer(get_in(portable, ["candidate_pool", "hits"]))
+    end)
+  end
+
   defp mock_run_dir(suite, method_id, f1, prefix \\ "runs") do
     dir =
       Path.join([
