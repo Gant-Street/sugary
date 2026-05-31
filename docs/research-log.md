@@ -1260,3 +1260,83 @@ Next research implication:
 - Do not tune AACR-specific static patterns.
 - The next variable should be benchmark-agnostic repo context for AACR, probably partial/sparse repository materialization or changed-file/callsite retrieval that avoids full huge-repo checkout.
 - After AACR has comparable repo context, rerun the same portable reviewer before changing model, prompt, or publisher.
+
+## 2026-05-31: PCRS v5 AACR Sparse Repo Context Gate
+
+Checkpoint:
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: negative transfer result with successful sparse-context infrastructure
+official benchmark score: not claimed
+Martian API key used: no
+AACR API key used: no
+model boundary: unchanged Codex CLI command reviewer
+```
+
+What changed:
+
+- Added `sugary repo sparse-context`.
+- Added `Sugary.SparseRepoContext` to build benchmark-agnostic sparse base/head workspaces from public GitHub commit SHAs.
+- Added reviewer-visible context files for changed files, selected related files, and cheap identifier context.
+- Kept oracle comments, expected claims, known non-issues, scorer labels, benchmark case IDs, and source PR URLs out of reviewer-visible workspaces.
+- Reused the existing `pcrs-v4-portable-codex-repo-low` reviewer, model, prompt, and publisher.
+
+Commands:
+
+```sh
+mix run -e 'IO.puts(Sugary.SparseRepoContext.run!(%{"suite" => "aacr-bench", "limit" => 50, "id" => "pcrs-v5-aacr-sparse-context-first50"}))'
+
+mix run -e 'IO.puts(Sugary.PortableTransferGate.run!(%{"id" => "pcrs-v5-aacr-sparse-transfer-first50", "suites" => "martian-offline,aacr-bench", "limit" => 50, "replay-mode" => "cache-first", "martian-run" => ".sugary/research/runs/20260531T153346Z-pcrs-v4-portable-transfer-first50-martian-offline"}))'
+```
+
+Run artifacts:
+
+```text
+.sugary/research/sparse-repo-context/20260531T174225Z-pcrs-v5-aacr-sparse-context-first50
+.sugary/research/sparse-repo-context/20260531T183359Z-pcrs-v5-aacr-sparse-context-first50-sanitized
+.sugary/research/transfer-gates/20260531T174709Z-pcrs-v5-aacr-sparse-transfer-first50
+.sugary/research/runs/20260531T174710Z-pcrs-v5-aacr-sparse-transfer-first50-aacr-bench
+.sugary/research/pcrs-ensemble-publisher/20260531T182940Z-pcrs-v5-aacr-sparse-transfer-first50-martian-publisher
+```
+
+The transfer score below was measured on the first sparse-context artifact. After scoring, the sparse workspace manifests were hardened and regenerated in the sanitized artifact above so future reviewer-visible workspaces also omit benchmark case IDs and PR URLs. This hardening does not change the reported score.
+
+Sparse context readiness:
+
+| Metric | Result |
+| --- | ---: |
+| AACR cases | 50 |
+| Sparse workspaces ready | 50 |
+| Failed cases | 0 |
+| Changed files written | 457 |
+| Related files written | 12 |
+| Grep/identifier context files | 48 |
+
+Transfer result:
+
+| Suite | Method | Workspace Inputs | Expected | Pool Hits | Pool Claims | Published Hits | Noise | Precision | Recall | F1 | Comments |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Martian | `pcrs-v4-portable-codex-repo-low` | 50 / 50 | 137 | 36 | 63 | 36 | 27 | 0.571 | 0.263 | 0.360 | 63 |
+| AACR | `pcrs-v4-portable-codex-repo-low` with sparse context | 50 / 50 | 467 | 8 | 44 | 8 | 39 | 0.182 | 0.017 | 0.031 | 44 |
+
+Martian publisher guardrail:
+
+| Policy | Hits | Noise | Precision | Recall | F1 | Comments | Gate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `posterior-max1-plus-source5-qualified-triad-budget52` | 44 | 8 | 0.846 | 0.321 | 0.466 | 52 | miss exact configured trust/default gate |
+| `qualified-f1-judge-risk-budget84-max3` | 62 | 22 | 0.738 | 0.453 | 0.561 | 84 | pass |
+
+Interpretation:
+
+- Sparse context successfully made AACR reviewer inputs repo-aware: 50 / 50 workspace inputs versus 0 / 50 in the prior portable AACR run.
+- That did not materially improve transfer. AACR F1 moved only from 0.028 to 0.031, pool hits moved from 7 to 8, and precision moved from 0.171 to 0.182.
+- The run misses the v5 stretch target: pool hits >= 20, precision >= 0.300, and a material F1 lift over 0.028.
+- Martian qualified guardrail did not regress below the local floor: F1 0.561, precision 0.738.
+- The best current explanation is that simple changed-file sparse context is not enough. The bottleneck is now candidate generation quality, evidence construction, or cross-benchmark claim matching.
+
+Next research implication:
+
+- Do not spend another loop on context plumbing alone.
+- Test a single higher-leverage variable next: repo search/tool use inside the reviewer, proof-specific refutation, or a calibrated publisher trained to reject AACR-style noise.
+- Keep AACR-specific static patterns out of the system.

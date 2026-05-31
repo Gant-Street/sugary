@@ -82,3 +82,39 @@ Interpretation:
 - It does not invalidate PCRS; it says the Martian-specific static pattern source does not generalize by itself.
 - The next useful variable is candidate generation on AACR-like real PRs: repo-aware retrieval, a model-backed candidate generator, or a small set of benchmark-agnostic proof tools.
 - Do not add AACR-specific patterns to make this result look better. That would corrupt the transfer gate.
+
+## Sparse Repo Context
+
+The first portable model-backed AACR run had no materialized workspaces, so Sugary now has a sparse context builder:
+
+```sh
+./sugary repo sparse-context --suite aacr-bench --limit 50 --id pcrs-v5-aacr-sparse-context-first50
+```
+
+It writes changed files, base files when available, local import/test/config neighbors, and cheap identifier context into:
+
+```text
+.sugary/research/workspaces/<case-id>/{base,head}
+```
+
+Reviewer-visible sparse workspaces do not include reference comments, expected claims, known non-issues, scorer labels, benchmark case IDs, or original PR URLs.
+
+PCRS v5 then reran the unchanged portable reviewer against those sparse workspaces:
+
+```sh
+mix run -e 'IO.puts(Sugary.PortableTransferGate.run!(%{"id" => "pcrs-v5-aacr-sparse-transfer-first50", "suites" => "martian-offline,aacr-bench", "limit" => 50, "replay-mode" => "cache-first", "martian-run" => ".sugary/research/runs/20260531T153346Z-pcrs-v4-portable-transfer-first50-martian-offline"}))'
+```
+
+Sparse-context result on first 50 AACR cases:
+
+| Method | Workspace Inputs | Expected Claims | Pool Hits | Pool Claims | Published Hits | Noise | Precision | Recall | F1 | Comments |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `pcrs-v4-portable-codex-repo-low` with sparse context | 50 / 50 | 467 | 8 | 44 | 8 | 39 | 0.182 | 0.017 | 0.031 | 44 |
+
+Interpretation:
+
+- Sparse context readiness passed: 50 / 50 AACR cases had workspace inputs.
+- The reviewer still missed the target: pool hits were 8, precision was 0.182, and F1 only moved from 0.028 to 0.031.
+- The Martian qualified publisher guardrail remained at 0.561 F1 and 0.738 precision using the cached Martian source run.
+- This rejects the theory that changed-file sparse context alone unlocks AACR transfer.
+- The next variable should target candidate generation quality, evidence construction, or benchmark-agnostic claim matching.

@@ -34,6 +34,8 @@ See [docs/architecture-gauntlet.md](docs/architecture-gauntlet.md) for comparing
 
 See [docs/repo-materialization.md](docs/repo-materialization.md) for materializing benchmark PRs into exact base/head repo workspaces.
 
+See [docs/sparse-repo-context.md](docs/sparse-repo-context.md) for sparse benchmark-agnostic repo context when full checkout is too expensive.
+
 See [docs/scientific-pilot.md](docs/scientific-pilot.md) for paired candidate-vs-baseline pilots with bootstrap intervals and sample-size gates.
 
 See [docs/research-log.md](docs/research-log.md) for local research checkpoints and transfer-smoke results.
@@ -73,6 +75,7 @@ elixir scripts/benchmarks/fetch_martian_diffs.exs --limit 3
 ./sugary architecture gauntlet gauntlets/five-variable-architecture-v0.toml --replay-mode cache-first
 ./sugary repo materialize --suite martian-offline --limit 30 --offset 0 --mode metadata
 ./sugary repo materialize --suite martian-offline --limit 10 --offset 0 --mode fetch
+./sugary repo sparse-context --suite aacr-bench --limit 50
 ./sugary scientific pilot --experiment experiments/public-martian-pcrs-transfer-v1.toml --candidate public-pcrs-static-codex-low-team --baseline codex-gpt-5.5-low --baseline codex-gpt-5.5-xhigh --limit 100 --replay-mode cache-first --min-cases 100
 ./sugary bench compare --run .sugary/research/runs/<local-run> --run .sugary/research/public-smoke/<public-run>
 ```
