@@ -15,6 +15,7 @@ review_focus = System.get_env("SUGARY_CODEX_REVIEW_FOCUS") || ""
 
 bundle_workspace_head = get_in(bundle, ["metadata", "workspace", "head"])
 bundle_workspace_base = get_in(bundle, ["metadata", "workspace", "base"])
+bundle_evidence_pack = get_in(bundle, ["metadata", "evidence_pack"])
 
 cwd =
   cond do
@@ -55,6 +56,20 @@ focus_section =
     """
   end
 
+evidence_pack_section =
+  if is_map(bundle_evidence_pack) do
+    stats = Map.get(bundle_evidence_pack, "stats", %{})
+
+    """
+    Evidence pack:
+    - metadata.evidence_pack is present and contains benchmark-agnostic changed hunks, base/head snippets, and related context.
+    - Evidence-pack sections: #{Map.get(stats, "sections", "unknown")}
+    - Cite relevant evidence_pack section ids in evidence_pack_sections_cited for each claim.
+    """
+  else
+    ""
+  end
+
 schema = %{
   type: "object",
   additionalProperties: false,
@@ -79,7 +94,8 @@ schema = %{
           "evidence_summary",
           "failure_path",
           "suggested_fix",
-          "suggested_test"
+          "suggested_test",
+          "evidence_pack_sections_cited"
         ],
         properties: %{
           claim: %{type: "string"},
@@ -93,7 +109,8 @@ schema = %{
           evidence_summary: %{type: "string"},
           failure_path: %{type: "array", items: %{type: "string"}},
           suggested_fix: %{type: "string"},
-          suggested_test: %{type: "string"}
+          suggested_test: %{type: "string"},
+          evidence_pack_sections_cited: %{type: "array", items: %{type: "string"}}
         }
       }
     }
@@ -115,11 +132,14 @@ Review the sanitized ReviewInputBundle below and, when available, the materializ
 
 #{workspace_summary}
 #{focus_section}
+#{evidence_pack_section}
 
 Publish only defects that appear introduced by this PR. Prefer concrete bug, security, contract, runtime, or test-gap findings. Avoid style comments and speculative edge cases. If evidence is weak, return no claims.
 
 For each claim:
 - explain the failure path in evidence_summary or failure_path
+- when metadata.evidence_pack is present, use it before relying on broad intuition
+- cite evidence-pack section ids when they materially support the claim
 - use the most specific path present in context.changed_files or the diff; if no real source path is present, use "unknown"
 - keep confidence calibrated
 - return at most #{max_claims} claims
@@ -263,7 +283,16 @@ claims =
             workspace_provided:
               is_binary(bundle_workspace_head) and File.dir?(bundle_workspace_head),
             raw_finding_ref: index
-          },
+          }
+          |> then(fn source ->
+            cited = Map.get(claim, "evidence_pack_sections_cited", [])
+
+            if is_list(cited) and cited != [] do
+              Map.put(source, :evidence_pack_sections_cited, cited)
+            else
+              source
+            end
+          end),
           publish_decision: "candidate"
         }
       end)
@@ -304,9 +333,10 @@ artifacts = [
     reasoning_effort: reasoning_effort,
     status: status,
     timed_out: Map.get(runner_result, "timed_out", false),
-    raw_stdout_preview: String.slice(raw_stdout || "", 0, 4000),
-    raw_stderr_preview: String.slice(raw_stderr || "", 0, 4000),
-    output_preview: String.slice(output_text || "", 0, 4000)
+    raw_stdout_preview: String.slice(raw_stdout || "", 0, 16_000),
+    raw_stderr_preview: String.slice(raw_stderr || "", 0, 16_000),
+    raw_stderr_tail: String.slice(raw_stderr || "", max(byte_size(raw_stderr || "") - 16_000, 0), 16_000),
+    output_preview: String.slice(output_text || "", 0, 16_000)
   }
 ]
 

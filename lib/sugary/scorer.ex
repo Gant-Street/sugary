@@ -34,26 +34,7 @@ defmodule Sugary.Scorer do
 
   defp score_case(_method_id, result) do
     published = Enum.filter(result.final_claims, &(&1.publish_decision == "publish"))
-
-    matched_expected_ids =
-      published
-      |> Enum.flat_map(fn claim ->
-        case Sugary.ClaimMatcher.expected_claim(result.case, claim) do
-          nil -> []
-          expected -> [Map.get(expected, :id)]
-        end
-      end)
-
-    hits = matched_expected_ids |> MapSet.new() |> MapSet.size()
-    duplicate_noise = length(matched_expected_ids) - hits
-
-    unsupported_noise =
-      Enum.count(published, fn claim ->
-        is_nil(Sugary.ClaimMatcher.expected_claim(result.case, claim)) or
-          not is_nil(Sugary.ClaimMatcher.known_non_issue(result.case, claim))
-      end)
-
-    noise = duplicate_noise + unsupported_noise
+    accounting = Sugary.ScoreAccounting.claim_accounting(result.case, published)
     valid = 0
 
     suppressed_true =
@@ -64,9 +45,16 @@ defmodule Sugary.Scorer do
       cases: 1,
       expected_claims: Sugary.ClaimMatcher.expected_ids(result.case) |> MapSet.size(),
       published_claims: length(published),
-      hits: hits,
+      precision_denominator: accounting.precision_denominator,
+      hits: accounting.unique_hits,
       valid_suggestions: valid,
-      noise: noise,
+      noise: accounting.noise_events,
+      matched_comments: accounting.matched_comments,
+      noisy_or_trap_comments: accounting.noisy_or_trap_comments,
+      unsupported_comments: accounting.unsupported_comments,
+      known_non_issue_comments: accounting.known_non_issue_comments,
+      hit_and_trap_comments: accounting.hit_and_trap_comments,
+      duplicate_hit_events: accounting.duplicate_hit_events,
       suppressed_true_claims: suppressed_true,
       cost: result.reviewer_result.cost,
       latency_ms: result.reviewer_result.latency_ms
@@ -103,6 +91,13 @@ defmodule Sugary.Scorer do
       hits: 0,
       valid_suggestions: 0,
       noise: 0,
+      precision_denominator: 0,
+      matched_comments: 0,
+      noisy_or_trap_comments: 0,
+      unsupported_comments: 0,
+      known_non_issue_comments: 0,
+      hit_and_trap_comments: 0,
+      duplicate_hit_events: 0,
       suppressed_true_claims: 0,
       cost: 0.0,
       latency_ms: 0

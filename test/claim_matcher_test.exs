@@ -70,6 +70,62 @@ defmodule Sugary.ClaimMatcherTest do
              Sugary.ClaimMatcher.expected_claim(bench_case(), claim(%{}))
   end
 
+  test "normalizes common benchmark and reviewer category synonyms" do
+    aacr_case =
+      Protocol.BenchmarkCase.new(%{
+        id: "aacr-category-synonym",
+        suite: "aacr-bench",
+        pr: %{title: "Generated pagination", body: ""},
+        diff: "offset = page * limit",
+        context: %{},
+        oracle: %{
+          expectedClaims: [
+            %{
+              id: "pagination-off-by-one",
+              description:
+                "The pagination offset skips the first page because it uses page * limit instead of (page - 1) * limit.",
+              category: "Code Defect",
+              severity: "high",
+              path: "src/pagination.ts"
+            },
+            %{
+              id: "naming-obscures-pagination",
+              description:
+                "The pagination helper uses ambiguous names that make page and offset semantics hard to maintain.",
+              category: "Maintainability and Readability",
+              severity: "medium",
+              path: "src/pagination.ts"
+            }
+          ],
+          knownNonIssues: []
+        }
+      })
+
+    correctness_claim =
+      claim(%{
+        path: "src/pagination.ts",
+        category: "correctness",
+        claim:
+          "The offset calculation uses page * limit, which skips page one instead of using (page - 1) * limit.",
+        evidence: [%{type: "llm", tier: 4, strength: "medium", summary: "off-by-one pagination"}]
+      })
+
+    maintainability_claim =
+      claim(%{
+        path: "src/pagination.ts",
+        category: "maintainability",
+        claim:
+          "The pagination helper uses ambiguous names, making page and offset semantics hard to maintain.",
+        evidence: [%{type: "llm", tier: 5, strength: "weak", summary: "ambiguous names"}]
+      })
+
+    assert %{id: "pagination-off-by-one"} =
+             Sugary.ClaimMatcher.expected_claim(aacr_case, correctness_claim)
+
+    assert %{id: "naming-obscures-pagination"} =
+             Sugary.ClaimMatcher.expected_claim(aacr_case, maintainability_claim)
+  end
+
   test "does not match claims on the wrong path" do
     refute Sugary.ClaimMatcher.expected_claim(bench_case(), claim(%{path: "src/other.ex"}))
   end

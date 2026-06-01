@@ -118,3 +118,80 @@ Interpretation:
 - The Martian qualified publisher guardrail remained at 0.561 F1 and 0.738 precision using the cached Martian source run.
 - This rejects the theory that changed-file sparse context alone unlocks AACR transfer.
 - The next variable should target candidate generation quality, evidence construction, or benchmark-agnostic claim matching.
+
+## PCRS v6 Claim-Space + Evidence-Pack Gate
+
+PCRS v6 tested whether AACR transfer was blocked by candidate-generation objective and evidence construction rather than sparse workspace availability.
+
+Command:
+
+```sh
+./sugary pcrs aacr v6 gate --limit 50 --replay-mode cache-first
+```
+
+Final artifact:
+
+```text
+.sugary/research/aacr-v6-gates/20260601T050703Z-pcrs-v6-aacr-claim-space-evidence-pack-first50-final/
+```
+
+The run compared three no-key Codex CLI reviewer variants over the same first 50 AACR cases:
+
+- `pcrs-v4-portable-codex-repo-low`: existing portable defect-oriented reviewer.
+- `pcrs-v6-broad-actionable-codex-low`: broader actionable-review objective.
+- `pcrs-v6-evidence-pack-codex-low`: broad objective plus benchmark-agnostic evidence packs from changed hunks and sparse base/head snippets.
+
+Metric accounting was reconciled before scoring:
+
+- Precision denominator is published comments or candidate claims.
+- Hits are unique matched expected claims.
+- Noise events include noisy/trap comments plus duplicate-hit events, so `hits + noise events` is not expected to equal comment count.
+- Category matching now normalizes common benchmark/reviewer synonyms such as `Code Defect`/`correctness`/`bug` and `Maintainability and Readability`/`maintainability`.
+
+AACR claim space on the first 50 cases:
+
+| Claim Type | Expected Claims |
+| --- | ---: |
+| maintainability | 205 |
+| defect | 150 |
+| performance | 51 |
+| contract | 25 |
+| security | 15 |
+| runtime | 13 |
+| test_gap | 8 |
+
+Final v6 result:
+
+| Method | Hits | Precision | Recall | F1 | Comments | Noise Events |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `pcrs-v4-portable-codex-repo-low` | 15 | 0.313 | 0.032 | 0.058 | 48 | 35 |
+| `pcrs-v6-broad-actionable-codex-low` | 14 | 0.233 | 0.030 | 0.053 | 60 | 47 |
+| `pcrs-v6-evidence-pack-codex-low` | 14 | 0.233 | 0.030 | 0.053 | 60 | 48 |
+
+Martian guardrail:
+
+| Metric | Result |
+| --- | ---: |
+| Qualified F1 | 0.561 |
+| Qualified precision | 0.738 |
+| Guardrail | pass |
+
+Decision:
+
+```text
+reject_aacr_claim_generation_transfer
+```
+
+Interpretation:
+
+- The existing portable defect reviewer improved after fairer category normalization and accounting: AACR F1 moved from 0.031 to 0.058 and precision from 0.182 to 0.313.
+- The v6 stretch did not pass because best candidate-pool hits remained 15, below the 20-hit target.
+- The broad actionable objective and evidence-pack objective did not beat the simpler portable reviewer.
+- Evidence-pack review cited 160 evidence sections, so the model used the supplied context, but that context use did not translate into more true positives.
+- The remaining gap is mostly recall: 452 of 467 expected claims are still missed by the best method.
+
+Next research implication:
+
+- Do not keep adding context unless it is tied to a measurable candidate-generation lift.
+- The next variable should be a different generation/search procedure, likely multi-pass claim-type targeting or a reviewer that explicitly covers AACR-like maintainability/performance/reference-comment claim space without reading oracle labels.
+- Keep AACR-specific static patterns and official-score claims out of the loop.

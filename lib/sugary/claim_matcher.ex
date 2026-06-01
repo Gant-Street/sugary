@@ -90,11 +90,20 @@ defmodule Sugary.ClaimMatcher do
   end
 
   defp compatible_category?(claim, oracle) do
-    claim_category = claim |> field(:category) |> normalize()
-    oracle_category = oracle |> field(:category) |> normalize()
+    claim_category = claim |> field(:category) |> normalize_category()
+    oracle_category = oracle |> field(:category) |> normalize_category()
 
-    claim_category in ["", oracle_category, "bug", "runtime", "static_analysis", "external_text"] or
-      oracle_category in ["bug", "", "public_benchmark"]
+    claim_category in [
+      "",
+      oracle_category,
+      "bug",
+      "defect",
+      "runtime",
+      "static_analysis",
+      "external_text",
+      "general_review"
+    ] or
+      oracle_category in ["bug", "defect", "", "public_benchmark", "general_review"]
   end
 
   defp token_overlap_score(claim, oracle) do
@@ -168,6 +177,36 @@ defmodule Sugary.ClaimMatcher do
     |> to_string()
     |> String.downcase()
     |> String.trim()
+  end
+
+  defp normalize_category(value) do
+    value = normalize(value)
+
+    cond do
+      value in ["code defect", "correctness", "defect", "bug", "bugs"] ->
+        "bug"
+
+      value in ["maintainability and readability", "maintainability", "readability"] ->
+        "maintainability"
+
+      value in ["security vulnerability", "security", "auth", "authorization"] ->
+        "security"
+
+      value in ["test", "tests", "test gap", "test_gap", "missing test"] ->
+        "test_gap"
+
+      String.contains?(value, "performance") ->
+        "performance"
+
+      String.contains?(value, "contract") or String.contains?(value, "schema") ->
+        "contract"
+
+      value == "" ->
+        ""
+
+      true ->
+        value
+    end
   end
 
   defp field(map, key, default \\ nil)

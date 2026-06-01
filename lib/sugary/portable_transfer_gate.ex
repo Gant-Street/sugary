@@ -244,12 +244,17 @@ defmodule Sugary.PortableTransferGate do
     hits = Enum.sum(Enum.map(per_case, & &1.hits))
     claims = Enum.sum(Enum.map(per_case, & &1.claims))
     noise = Enum.sum(Enum.map(per_case, & &1.noise))
+    noisy_or_trap_claims = Enum.sum(Enum.map(per_case, & &1.noisy_or_trap_claims))
 
     %{
       expected_claims: expected,
       claims: claims,
+      precision_denominator: claims,
       hits: hits,
       noise: noise,
+      noisy_or_trap_claims: noisy_or_trap_claims,
+      duplicate_hit_events: Enum.sum(Enum.map(per_case, & &1.duplicate_hit_events)),
+      hit_and_trap_claims: Enum.sum(Enum.map(per_case, & &1.hit_and_trap_claims)),
       precision: ratio(hits, claims),
       recall: ratio(hits, expected),
       per_case: per_case
@@ -258,31 +263,17 @@ defmodule Sugary.PortableTransferGate do
 
   defp candidate_case_metrics(result) do
     claims = result.candidate_claims || []
-
-    matched_ids =
-      claims
-      |> Enum.flat_map(fn claim ->
-        case Sugary.ClaimMatcher.expected_claim(result.case, claim) do
-          nil -> []
-          expected -> [Map.get(expected, :id) || Map.get(expected, "id")]
-        end
-      end)
-
-    hit_count = matched_ids |> MapSet.new() |> MapSet.size()
-    duplicate_noise = length(matched_ids) - hit_count
-
-    unsupported_noise =
-      Enum.count(claims, fn claim ->
-        is_nil(Sugary.ClaimMatcher.expected_claim(result.case, claim)) or
-          not is_nil(Sugary.ClaimMatcher.known_non_issue(result.case, claim))
-      end)
+    accounting = Sugary.ScoreAccounting.claim_accounting(result.case, claims)
 
     %{
       case_id: result.case.id,
       expected_claims: Sugary.ClaimMatcher.expected_ids(result.case) |> MapSet.size(),
       claims: length(claims),
-      hits: hit_count,
-      noise: duplicate_noise + unsupported_noise
+      hits: accounting.unique_hits,
+      noise: accounting.noise_events,
+      noisy_or_trap_claims: accounting.noisy_or_trap_comments,
+      duplicate_hit_events: accounting.duplicate_hit_events,
+      hit_and_trap_claims: accounting.hit_and_trap_comments
     }
   end
 
@@ -536,11 +527,13 @@ defmodule Sugary.PortableTransferGate do
     - Leakage fatal: #{suite.leakage[:fatal?] || suite.leakage["fatal?"] || false}
     - Decision: `#{suite.decision}`
 
-    | Method | Pool Hits | Pool Recall | Pool Claims | Published Hits | Noise | Precision | F1 | Comments |
-    | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-    | Baseline | #{pool_metric(baseline, :hits)} | #{pool_fmt(baseline, :recall)} | #{pool_metric(baseline, :claims)} | #{pub_metric(baseline, :hits)} | #{pub_metric(baseline, :noise)} | #{pub_fmt(baseline, :precision)} | #{pub_fmt(baseline, :f1)} | #{pub_metric(baseline, :published_claims)} |
-    | Static proof ablation | #{pool_metric(static, :hits)} | #{pool_fmt(static, :recall)} | #{pool_metric(static, :claims)} | #{pub_metric(static, :hits)} | #{pub_metric(static, :noise)} | #{pub_fmt(static, :precision)} | #{pub_fmt(static, :f1)} | #{pub_metric(static, :published_claims)} |
-    | Portable candidate source | #{pool_metric(portable, :hits)} | #{pool_fmt(portable, :recall)} | #{pool_metric(portable, :claims)} | #{pub_metric(portable, :hits)} | #{pub_metric(portable, :noise)} | #{pub_fmt(portable, :precision)} | #{pub_fmt(portable, :f1)} | #{pub_metric(portable, :published_claims)} |
+    | Method | Pool Hits | Pool Recall | Pool Claims | Pool Noisy/Trap Claims | Published Hits | Noise Events | Precision | F1 | Comments |
+    | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+    | Baseline | #{pool_metric(baseline, :hits)} | #{pool_fmt(baseline, :recall)} | #{pool_metric(baseline, :claims)} | #{pool_metric(baseline, :noisy_or_trap_claims)} | #{pub_metric(baseline, :hits)} | #{pub_metric(baseline, :noise)} | #{pub_fmt(baseline, :precision)} | #{pub_fmt(baseline, :f1)} | #{pub_metric(baseline, :published_claims)} |
+    | Static proof ablation | #{pool_metric(static, :hits)} | #{pool_fmt(static, :recall)} | #{pool_metric(static, :claims)} | #{pool_metric(static, :noisy_or_trap_claims)} | #{pub_metric(static, :hits)} | #{pub_metric(static, :noise)} | #{pub_fmt(static, :precision)} | #{pub_fmt(static, :f1)} | #{pub_metric(static, :published_claims)} |
+    | Portable candidate source | #{pool_metric(portable, :hits)} | #{pool_fmt(portable, :recall)} | #{pool_metric(portable, :claims)} | #{pool_metric(portable, :noisy_or_trap_claims)} | #{pub_metric(portable, :hits)} | #{pub_metric(portable, :noise)} | #{pub_fmt(portable, :precision)} | #{pub_fmt(portable, :f1)} | #{pub_metric(portable, :published_claims)} |
+
+    Accounting note: precision uses comments/claims as the denominator. `Noise Events` includes noisy/trap comments plus duplicate-hit events, so unique hits plus noise events is not intended to equal comments.
     """
   end
 

@@ -167,7 +167,18 @@ defmodule Sugary.Protocol do
 
   defmodule Scorecard do
     @required ~w(cases expected_claims published_claims hits valid_suggestions noise suppressed_true_claims precision recall f1 usefulness snr avg_comments_per_pr cost latency_ms)a
-    defstruct @required ++ [:method_id]
+    defstruct @required ++
+                [
+                  :method_id,
+                  :precision_denominator,
+                  :matched_comments,
+                  :noisy_or_trap_comments,
+                  :unsupported_comments,
+                  :known_non_issue_comments,
+                  :hit_and_trap_comments,
+                  :duplicate_hit_events
+                ]
+
     def required_fields, do: @required
     def new(attrs), do: Sugary.Protocol.build!(__MODULE__, attrs)
   end

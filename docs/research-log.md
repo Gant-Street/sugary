@@ -1340,3 +1340,88 @@ Next research implication:
 - Do not spend another loop on context plumbing alone.
 - Test a single higher-leverage variable next: repo search/tool use inside the reviewer, proof-specific refutation, or a calibrated publisher trained to reject AACR-style noise.
 - Keep AACR-specific static patterns out of the system.
+
+## 2026-06-01: PCRS v6 AACR Claim-Space + Evidence-Pack Gate
+
+Checkpoint:
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: guarded negative result
+official benchmark score: not claimed
+Martian API key used: no
+AACR API key used: no
+model boundary: Codex CLI command reviewer through Sugary protocol
+```
+
+What changed:
+
+- Added explicit score-accounting reconciliation so precision denominators, matched comments, noisy/trap comments, duplicate-hit events, and hit/trap overlaps are reported separately.
+- Added benchmark/reviewer category synonym normalization for claim matching.
+- Added benchmark-agnostic evidence packs from changed hunks, sparse base/head snippets, and cheap related-file context.
+- Added a v6 AACR gate that compares defect-focused, broad-actionable, and evidence-pack Codex reviewer variants.
+- Expanded the v6 report with generated-claim distributions, unmatched/missed summaries, near-match risk, context-use citations, adapter modes, and reviewer errors.
+
+Commands:
+
+```sh
+mix run -e 'IO.puts(Sugary.AACRV6Gate.run!(%{"id" => "pcrs-v6-aacr-claim-space-evidence-pack-first50-final", "limit" => 50, "replay-mode" => "cache-first", "ensure-sparse-context" => "true"}))'
+```
+
+Run artifacts:
+
+```text
+.sugary/research/aacr-v6-gates/20260601T050703Z-pcrs-v6-aacr-claim-space-evidence-pack-first50-final
+.sugary/research/runs/20260601T051057Z-pcrs-v6-aacr-claim-space-evidence-pack-first50-final-aacr-bench
+.sugary/research/transfer-gates/20260601T051107Z-pcrs-v6-aacr-claim-space-evidence-pack-first50-final-martian-guardrail
+```
+
+Note: an earlier v6 run failed because the Codex structured-output schema added `evidence_pack_sections_cited` to `properties` but not to `required`. That run produced no useful reviewer claims and is not used for the result below.
+
+AACR first-50 claim space:
+
+| Claim Type | Expected Claims |
+| --- | ---: |
+| maintainability | 205 |
+| defect | 150 |
+| performance | 51 |
+| contract | 25 |
+| security | 15 |
+| runtime | 13 |
+| test_gap | 8 |
+
+Final result:
+
+| Method | Hits | Precision | Recall | F1 | Comments | Noise Events | Evidence Citations |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `pcrs-v4-portable-codex-repo-low` | 15 | 0.313 | 0.032 | 0.058 | 48 | 35 | 0 |
+| `pcrs-v6-broad-actionable-codex-low` | 14 | 0.233 | 0.030 | 0.053 | 60 | 47 | 0 |
+| `pcrs-v6-evidence-pack-codex-low` | 14 | 0.233 | 0.030 | 0.053 | 60 | 48 | 160 |
+
+Martian guardrail:
+
+| Metric | Result |
+| --- | ---: |
+| Qualified F1 | 0.561 |
+| Qualified precision | 0.738 |
+| Guardrail | pass |
+
+Decision:
+
+```text
+reject_aacr_claim_generation_transfer
+```
+
+Interpretation:
+
+- The accounting and matcher audit matters: the existing portable reviewer moved from the prior sparse-context result of 8 hits / 0.182 precision / 0.031 F1 to 15 hits / 0.313 precision / 0.058 F1.
+- The v6 candidate-generation target was still missed because candidate-pool hits remained 15 against a target of 20.
+- Broad actionable review and evidence-pack review both produced more comments but worse precision than the simpler portable reviewer.
+- Evidence-pack review cited 160 evidence sections, so the model consumed the evidence-pack context, but citation/use alone did not create transfer lift.
+- The largest uncovered mass is maintainability and performance/reference-comment style findings; the current defect-oriented objective is not searching that claim space effectively.
+
+Next research implication:
+
+- Do not treat more context as a default win.
+- The next loop should test a different generation/search procedure with a locked target, not another context wrapper.
+- The promising variable is multi-pass claim-type targeting over the public benchmark claim-space distribution, while keeping oracle labels and AACR-specific static patterns out of reviewer prompts.
