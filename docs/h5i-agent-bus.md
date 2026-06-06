@@ -18,6 +18,31 @@ If h5i is not installed, Sugary does not fail the experiment. The report records
 - local message path
 - h5i mirror events, if any
 
+## Install h5i
+
+Official install path:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Koukyosyumei/h5i/main/install.sh | sh
+```
+
+For a user-local install without `sudo`:
+
+```sh
+mkdir -p ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/Koukyosyumei/h5i/main/install.sh -o /tmp/h5i-install.sh
+H5I_INSTALL_DIR="$HOME/.local/bin" sh /tmp/h5i-install.sh
+h5i --version
+```
+
+Initialize the repo sidecar:
+
+```sh
+h5i init
+```
+
+Plain `git push` does not push h5i refs. Use `h5i push` only when the project intentionally wants to share `refs/h5i/*` with collaborators.
+
 ## Martian-Only Gate
 
 Run:
@@ -68,6 +93,8 @@ The Martian orchestration gate writes a separate agent-bus leakage report.
 ## Interpretation
 
 The first h5i-shaped run is transport-only. It does not prove h5i improves review quality, because reviewer prompts and tools are unchanged.
+
+Live h5i mirroring requires a sender identity. Sugary passes `--from sugary-orchestrator` when mirroring `REVIEW_REQUEST` messages.
 
 Keep h5i only if later experiments show measurable value from persistent coordination or cross-agent memory:
 

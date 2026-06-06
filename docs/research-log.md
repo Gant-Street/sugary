@@ -1491,3 +1491,71 @@ Next research implication:
 - Keep the agent bus as a measurement substrate, not as a product dependency.
 - The next h5i/persistent-agent test must change exactly one variable: persistent memory or cross-agent handoff influencing candidate generation.
 - Do not promote a persistent subagent architecture unless it beats the best single reviewer on Martian smoke without SNR/comment-count regression.
+
+## 2026-06-06: h5i Install and Live Mirror Verification
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+h5i version: 0.1.6
+install path: /Users/eric/.local/bin/h5i
+repo initialized: yes
+h5i refs pushed: no
+status: live mirror works after sender-identity fix
+```
+
+What happened:
+
+- Installed h5i v0.1.6 into `~/.local/bin`.
+- Ran `h5i init`, which initialized `.git/.h5i` and created local instruction files.
+- The first live h5i Martian gate exposed an adapter bug: `h5i msg review` rejected messages without a sender identity.
+- Patched Sugary’s h5i mirror to pass `--from sugary-orchestrator` and capture h5i stderr/stdout into event artifacts.
+- Reran a 1-case Martian gate with `--agent-bus h5i`.
+
+Command:
+
+```sh
+./sugary orchestrator martian gate --limit 1 --replay-mode cache-first --agent-bus h5i
+```
+
+Run artifacts:
+
+```text
+.sugary/research/orchestrator-gates/20260606T163756Z-martian-orchestrator-h5i-v0
+```
+
+Result:
+
+| Method | Recall | Usefulness | SNR | F1 | Avg Comments | Published | Noise |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `baseline-diff-only` | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0 | 0 |
+| `public-static-proof-gate` | 0.667 | 1.000 | 2.000 | 0.800 | 2.000 | 2 | 0 |
+| `orchestrated-public-pcrs-static-codex-low-team` | 0.667 | 0.667 | 2.000 | 0.667 | 3.000 | 3 | 1 |
+
+Agent bus:
+
+| Metric | Result |
+| --- | ---: |
+| Messages | 9 |
+| h5i mirror events | 2 |
+| h5i mirror failures | 0 |
+| Reviewer input leakage fatal | false |
+| Agent-bus leakage fatal | false |
+
+h5i message history:
+
+```text
+sugary-orchestrator -> static-proof-sentinel REVIEW_REQUEST
+sugary-orchestrator -> codex-review-sentinel REVIEW_REQUEST
+```
+
+Decision:
+
+```text
+transport_validated_no_quality_lift
+```
+
+Interpretation:
+
+- h5i now works as a live optional message backend for Sugary orchestration.
+- The review-quality result is still negative for the current team: best single static proof reviewer beats the orchestrated team.
+- h5i should remain a transport/memory experiment until persistent memory or handoff changes produce measurable Martian lift without SNR/comment-count regression.

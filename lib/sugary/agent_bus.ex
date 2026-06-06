@@ -107,9 +107,13 @@ defmodule Sugary.AgentBus do
     summary =
       Map.get(message, "summary") || Map.get(payload, "summary") || "Sugary review request"
 
+    from = Map.get(message, "from") || "sugary-orchestrator"
+
     args = [
       "msg",
       "review",
+      "--from",
+      from,
       "--branch",
       branch,
       "--focus",
@@ -120,7 +124,7 @@ defmodule Sugary.AgentBus do
       summary
     ]
 
-    task = Task.async(fn -> System.cmd(bus.h5i_path, args, stderr_to_stdout: false) end)
+    task = Task.async(fn -> System.cmd(bus.h5i_path, args, stderr_to_stdout: true) end)
 
     case Task.yield(task, @h5i_timeout_ms) || Task.shutdown(task, :brutal_kill) do
       {:ok, {stdout, 0}} ->
