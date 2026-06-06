@@ -1612,3 +1612,87 @@ Interpretation:
 - h5i is now set up enough for persistent context and live cross-agent messages in this clone.
 - h5i refs remain local because publishing `refs/h5i/*` should be a deliberate public-project decision.
 - The next controlled experiment should test h5i memory as the single changed variable, not transport alone.
+
+## 2026-06-06: h5i Persistent Memory Gauntlet v0
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: controlled negative result
+h5i version: 0.1.6
+h5i refs pushed: no
+official benchmark score: not claimed
+```
+
+Question:
+
+```text
+Does h5i-backed persistent specialist memory improve Martian review quality
+over the same stateless candidate pool?
+```
+
+What changed:
+
+- Added `./sugary h5i memory gauntlet`.
+- Added a train/eval Martian memory loop.
+- Added `stateless-normalized-team` so memory and no-memory variants publish from the same candidate pool and comment budget.
+- Added `shuffled-memory-control-team` as a negative control.
+- Added memory leakage checks for eval source case IDs and oracle markers.
+- Mirrored the memory lesson summary into h5i context.
+
+Command:
+
+```sh
+./sugary h5i memory gauntlet \
+  --train-limit 3 \
+  --eval-limit 3 \
+  --train-offset 0 \
+  --eval-offset 3 \
+  --replay-mode cache-first \
+  --h5i true
+```
+
+Run artifacts:
+
+```text
+.sugary/research/persistent-memory-gauntlets/20260606T170634Z-h5i-persistent-memory-gauntlet-v0
+```
+
+Result:
+
+| Method | Recall | Usefulness | SNR | F1 | Avg Comments | Published | Noise |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `stateless-team` | 0.300 | 1.000 | 3.000 | 0.462 | 1.000 | 3 | 0 |
+| `stateless-normalized-team` | 0.300 | 1.000 | 3.000 | 0.462 | 1.000 | 3 | 0 |
+| `h5i-persistent-memory-team` | 0.200 | 1.000 | 2.000 | 0.333 | 0.667 | 2 | 0 |
+| `shuffled-memory-control-team` | 0.300 | 1.000 | 3.000 | 0.462 | 1.000 | 3 | 0 |
+| `public-static-proof-gate` | 0.200 | 1.000 | 2.000 | 0.333 | 0.667 | 2 | 0 |
+| `baseline-diff-only` | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0 | 0 |
+
+Memory:
+
+| Metric | Result |
+| --- | ---: |
+| Positive lessons | 5 |
+| Negative lessons | 4 |
+| Memory unique hits over stateless-normalized | 0 |
+| Added noise over stateless-normalized | 0 |
+| Fatal leakage | false |
+
+Decision:
+
+```text
+invalidate_h5i_memory_lift
+```
+
+Interpretation:
+
+- h5i-backed memory persistence and message routing worked.
+- The first ranking/refutation memory policy hurt recall by suppressing one useful published claim.
+- The shuffled-memory control matched stateless-normalized, so the memory policy did not show robust lift.
+- This invalidates the current memory-as-refuter/ranker policy on this Martian subset, not the broader persistent-subagent thesis.
+
+Next research implication:
+
+- Do not use train-derived negative memory as a hard suppression rule.
+- The next test should separate memory-assisted candidate generation from memory-assisted refutation.
+- A better h5i memory policy should retrieve positive repo conventions and prior missed categories, then require proof construction before changing publish decisions.

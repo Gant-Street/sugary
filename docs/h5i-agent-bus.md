@@ -114,6 +114,12 @@ CLAUDE.md
 
 Those files explain how agents should use h5i without making public benchmark runs depend on h5i state.
 
+For the controlled memory experiment, see:
+
+```text
+docs/h5i-persistent-memory-gauntlet.md
+```
+
 Keep h5i only if later experiments show measurable value from persistent coordination or cross-agent memory:
 
 - higher F1 or usefulness-adjusted F1
