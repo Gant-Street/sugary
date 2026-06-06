@@ -1559,3 +1559,56 @@ Interpretation:
 - h5i now works as a live optional message backend for Sugary orchestration.
 - The review-quality result is still negative for the current team: best single static proof reviewer beats the orchestrated team.
 - h5i should remain a transport/memory experiment until persistent memory or handoff changes produce measurable Martian lift without SNR/comment-count regression.
+
+## 2026-06-06: h5i Repo Integration Finalization
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: repo integration complete, h5i refs still local-only
+h5i version: 0.1.6
+context branch: codex/pcrs-v3-no-key-gauntlet
+context commits: 1
+live claims: 1
+h5i refs pushed: no
+```
+
+What changed:
+
+- Replaced generated h5i agent instructions with concise Sugary-specific instructions in `AGENTS.md`.
+- Kept `CLAUDE.md` as a thin import of `.claude/h5i.md`.
+- Initialized the h5i context workspace with the Sugary project goal.
+- Recorded one live claim about the h5i backend.
+- Added local `remote.origin.fetch` refspecs for `refs/h5i/*` with `h5i share setup-remote`.
+- Verified `h5i codex prelude` restores context and live claims.
+- Reran the h5i-backed Martian gate after setup.
+
+Verification:
+
+```sh
+h5i context init --goal "Build Sugary into a benchmark-driven proof-carrying AI code review system."
+h5i capture claim "Sugary h5i backend mirrors REVIEW_REQUEST via h5i msg review; local JSONL remains source of truth." --path lib/sugary/agent_bus.ex
+h5i context commit "Initialize Sugary h5i integration" --detail "Installed h5i, initialized context workspace, verified h5i message backend, and added concise repo agent instructions."
+h5i share setup-remote
+h5i codex prelude
+./sugary orchestrator martian gate --limit 1 --replay-mode cache-first --agent-bus h5i
+```
+
+Latest gate artifacts:
+
+```text
+.sugary/research/orchestrator-gates/20260606T165043Z-martian-orchestrator-h5i-v0
+```
+
+Latest h5i-backed gate result:
+
+| Method | Recall | Usefulness | SNR | F1 | Avg Comments | Published | Noise |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `baseline-diff-only` | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0 | 0 |
+| `public-static-proof-gate` | 0.667 | 1.000 | 2.000 | 0.800 | 2.000 | 2 | 0 |
+| `orchestrated-public-pcrs-static-codex-low-team` | 0.667 | 0.667 | 2.000 | 0.667 | 3.000 | 3 | 1 |
+
+Interpretation:
+
+- h5i is now set up enough for persistent context and live cross-agent messages in this clone.
+- h5i refs remain local because publishing `refs/h5i/*` should be a deliberate public-project decision.
+- The next controlled experiment should test h5i memory as the single changed variable, not transport alone.

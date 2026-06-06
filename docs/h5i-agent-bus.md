@@ -43,6 +43,14 @@ h5i init
 
 Plain `git push` does not push h5i refs. Use `h5i push` only when the project intentionally wants to share `refs/h5i/*` with collaborators.
 
+For a local clone that should fetch shared h5i refs when they exist:
+
+```sh
+h5i share setup-remote
+```
+
+This writes fetch refspecs to local `.git/config`; it does not create a tracked repository change.
+
 ## Martian-Only Gate
 
 Run:
@@ -95,6 +103,16 @@ The Martian orchestration gate writes a separate agent-bus leakage report.
 The first h5i-shaped run is transport-only. It does not prove h5i improves review quality, because reviewer prompts and tools are unchanged.
 
 Live h5i mirroring requires a sender identity. Sugary passes `--from sugary-orchestrator` when mirroring `REVIEW_REQUEST` messages.
+
+Sugary keeps concise repo-facing agent guidance in:
+
+```text
+AGENTS.md
+CLAUDE.md
+.claude/h5i.md
+```
+
+Those files explain how agents should use h5i without making public benchmark runs depend on h5i state.
 
 Keep h5i only if later experiments show measurable value from persistent coordination or cross-agent memory:
 
