@@ -1696,3 +1696,113 @@ Next research implication:
 - Do not use train-derived negative memory as a hard suppression rule.
 - The next test should separate memory-assisted candidate generation from memory-assisted refutation.
 - A better h5i memory policy should retrieve positive repo conventions and prior missed categories, then require proof construction before changing publish decisions.
+
+## 2026-06-06: Repo/History Tool Gauntlet v1
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: controlled negative result
+suite: Martian offline local smoke, cases 1-10
+official benchmark score: not claimed
+model calls: none
+```
+
+Question:
+
+```text
+Do read-only full-repo and git-history evidence tools improve publishing
+when applied to a fixed public-static-proof-gate Martian claim pool?
+```
+
+What changed:
+
+- Added `Sugary.RepoTools` with structured evidence for:
+  - `read_changed_file`
+  - `repo_grep`
+  - `git_history`
+  - `git_grep_history`
+- Added repo/history tool support to the existing replay-based tool gauntlet.
+- Added `--materialize true` to `./sugary tool gauntlet`.
+- Added a reproducible 10-case Martian source manifest.
+- Added CI-safe tests using a local bare git repo.
+
+Commands:
+
+```sh
+mix escript.build
+
+./sugary experiment run experiments/tool-repo-history-martian-smoke-v0.toml
+
+./sugary tool gauntlet \
+  --source-run .sugary/research/runs/20260606T173620Z-tool-repo-history-martian-smoke-v0 \
+  --method public-static-proof-gate \
+  --baseline baseline-diff-only \
+  --suite martian-offline \
+  --limit 10 \
+  --offset 0 \
+  --tools read_changed_file,repo_grep,git_history,git_grep_history \
+  --materialize true \
+  --max-published 2 \
+  --min-score 2.0 \
+  --id repo-history-tool-gauntlet-v1-martian-smoke-10
+```
+
+Run artifacts:
+
+```text
+.sugary/research/runs/20260606T173620Z-tool-repo-history-martian-smoke-v0
+.sugary/research/tool-gauntlets/20260606T173722Z-repo-history-tool-gauntlet-v1-martian-smoke-10
+.sugary/research/repo-materializations/20260606T173700Z-repo-history-tool-gauntlet-v1-martian-smoke-10-repo-materialization
+```
+
+Materialization:
+
+| Metric | Result |
+| --- | ---: |
+| Cases | 10 |
+| Workspace ready | 10 |
+| Git metadata resolved | 10 |
+| Exact diff parity | 10 |
+| Tool-ready cases | 10 |
+| Failed | 0 |
+
+Tool evidence availability:
+
+| Tool | Support | Counterargument | Unavailable |
+| --- | ---: | ---: | ---: |
+| `read_changed_file` | 7 | 0 | 0 |
+| `repo_grep` | 3 | 4 | 0 |
+| `git_history` | 7 | 0 | 0 |
+| `git_grep_history` | 1 | 6 | 0 |
+
+Result:
+
+| Variant | F1 | Usefulness | SNR | Hits | Noise | Avg comments/PR |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Source method: `public-static-proof-gate` | 0.343 | 0.857 | 6.000 | 6 | 1 | 0.700 |
+| Raw baseline: `baseline-diff-only` | 0.000 | 0.000 | 0.000 | 0 | 0 | 0.000 |
+| Control no-tool ranker | 0.343 | 0.857 | 6.000 | 6 | 1 | 0.700 |
+| `read_changed_file` | 0.343 | 0.857 | 6.000 | 6 | 1 | 0.700 |
+| `repo_grep` | 0.343 | 0.857 | 6.000 | 6 | 1 | 0.700 |
+| `git_history` | 0.343 | 0.857 | 6.000 | 6 | 1 | 0.700 |
+| `git_grep_history` | 0.343 | 0.857 | 6.000 | 6 | 1 | 0.700 |
+
+Decision:
+
+```text
+Kept capabilities: none
+```
+
+Interpretation:
+
+- The repo and history tools are now real on this slice: all 10 cases had materialized workspaces, exact diff parity, and local git cache access.
+- The tools produced structured citations, so the implementation is usable for future agent/tool experiments.
+- No tool improved F1, usefulness, SNR, hits, noise, or comment count in replay mode.
+- This does not invalidate repo tools. It invalidates using these naive post-hoc evidence bonuses as a publisher improvement over this fixed static candidate pool.
+- The likely bottleneck is candidate generation: the fixed pool had only 7 published/static claims, so tools could not discover missing issues.
+
+Next research implication:
+
+- Treat repo grep/history as candidate-generation and refutation tools, not just replay-time score boosts.
+- The next live/tool loop should let an agent ask a small number of repo/history questions before proposing claims.
+- Do not add bash/test execution until repo/history tool use has a live, locked comparison against a no-tool agent.

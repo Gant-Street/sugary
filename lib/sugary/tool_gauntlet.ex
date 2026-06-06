@@ -18,6 +18,14 @@ defmodule Sugary.ToolGauntlet do
     max_published = Keyword.get(opts, :max_published, 2)
     min_score = Keyword.get(opts, :min_score, 2.0)
     capabilities = Keyword.get(opts, :capabilities, default_capabilities())
+    materialize? = Keyword.get(opts, :materialize, false)
+
+    materialization_run =
+      if materialize? do
+        maybe_materialize!(suite, split, limit, offset, "#{id}-repo-materialization")
+      else
+        nil
+      end
 
     cases = load_cases!(suite, limit: limit, offset: offset, split: split)
     out_dir = make_run_dir(id)
@@ -34,7 +42,9 @@ defmodule Sugary.ToolGauntlet do
       offset: offset,
       max_published: max_published,
       min_score: min_score,
-      capabilities: capabilities
+      capabilities: capabilities,
+      materialize: materialize?,
+      materialization_run: materialization_run
     }
 
     source_report = score_source(source_run, method_id, cases, method_id)
@@ -126,6 +136,20 @@ defmodule Sugary.ToolGauntlet do
       )
     end)
   end
+
+  defp maybe_materialize!(suite, split, limit, offset, id)
+       when suite in ["martian-offline", "cr-bench", "aacr-bench"] do
+    Sugary.RepoMaterializer.run!(
+      suite: suite,
+      split: split,
+      limit: limit,
+      offset: offset,
+      mode: "fetch",
+      id: id
+    )
+  end
+
+  defp maybe_materialize!(_suite, _split, _limit, _offset, _id), do: nil
 
   defp score_source(source_run, method_id, cases, policy_id) do
     results =
@@ -227,39 +251,11 @@ defmodule Sugary.ToolGauntlet do
     |> Map.put(:publish_score, Float.round(publish_score, 4))
   end
 
-  defp tool_signal("read_changed_files", claim, bench_case) do
-    changed = changed_files(bench_case)
-    path = normalize_path(Map.get(claim, :path))
+  defp tool_signal("read_changed_files", claim, bench_case),
+    do: normalize_repo_tool_signal("read_changed_files", claim, bench_case)
 
-    cond do
-      changed == [] ->
-        signal(
-          "read_changed_files",
-          "unavailable",
-          "No changed-file list was available.",
-          0.0,
-          0.0
-        )
-
-      path in ["", "unknown"] ->
-        signal("read_changed_files", "counterargument", "Claim path is unknown.", 0.0, 0.55)
-
-      Enum.any?(changed, &same_or_suffix_path?(&1, path)) ->
-        signal("read_changed_files", "support", "Claim path is in changed files.", 0.65, 0.0)
-
-      path_appears_in_diff?(bench_case.diff, path) ->
-        signal("read_changed_files", "support", "Claim path appears in the diff.", 0.45, 0.0)
-
-      true ->
-        signal(
-          "read_changed_files",
-          "counterargument",
-          "Claim path is outside changed files.",
-          0.0,
-          1.1
-        )
-    end
-  end
+  defp tool_signal("read_changed_file", claim, bench_case),
+    do: normalize_repo_tool_signal("read_changed_file", claim, bench_case)
 
   defp tool_signal("base_preexisting_check", claim, bench_case) do
     text = claim_text(claim)
@@ -303,52 +299,28 @@ defmodule Sugary.ToolGauntlet do
     end
   end
 
-  defp tool_signal("repo_rg", claim, bench_case) do
-    repo_path = repo_path(bench_case)
+  defp tool_signal("repo_rg", claim, bench_case),
+    do: normalize_repo_tool_signal("repo_rg", claim, bench_case)
 
-    cond do
-      is_nil(System.find_executable("rg")) ->
-        signal("repo_rg", "unavailable", "`rg` is not installed.", 0.0, 0.0)
+  defp tool_signal("repo_grep", claim, bench_case),
+    do: normalize_repo_tool_signal("repo_grep", claim, bench_case)
 
-      repo_path in [nil, ""] or not File.dir?(repo_path) ->
-        signal(
-          "repo_rg",
-          "unavailable",
-          "No local target repository checkout was available.",
-          0.0,
-          0.0
-        )
+  defp tool_signal("git_history", claim, bench_case),
+    do: normalize_repo_tool_signal("git_history", claim, bench_case)
 
-      true ->
-        query = rg_query(claim)
-
-        case run_rg(repo_path, query) do
-          {:ok, matches} when matches > 0 ->
-            signal(
-              "repo_rg",
-              "support",
-              "`rg` found claim tokens in the target checkout.",
-              0.4,
-              0.0
-            )
-
-          {:ok, 0} ->
-            signal(
-              "repo_rg",
-              "counterargument",
-              "`rg` did not find claim tokens in the target checkout.",
-              0.0,
-              0.25
-            )
-
-          {:error, reason} ->
-            signal("repo_rg", "unavailable", reason, 0.0, 0.0)
-        end
-    end
-  end
+  defp tool_signal("git_grep_history", claim, bench_case),
+    do: normalize_repo_tool_signal("git_grep_history", claim, bench_case)
 
   defp tool_signal(name, _claim, _bench_case),
     do: signal(name, "unknown", "Unknown tool capability.", 0.0, 0.0)
+
+  defp normalize_repo_tool_signal(capability, claim, bench_case) do
+    bench_case
+    |> Sugary.RepoTools.evidence_for_claim(claim, capability)
+    |> Map.put(:tool, capability)
+    |> Map.update(:bonus, 0.0, &(&1 || 0.0))
+    |> Map.update(:penalty, 0.0, &(&1 || 0.0))
+  end
 
   defp signal(tool, status, summary, bonus, penalty) do
     %{
@@ -560,60 +532,8 @@ defmodule Sugary.ToolGauntlet do
     max(6 - tier, 1) / 5
   end
 
-  defp changed_files(bench_case) do
-    context = bench_case.context || %{}
-    allowed = field(context, :allowed, context)
-    allowed |> field(:changed_files, []) |> List.wrap() |> Enum.map(&normalize_path/1)
-  end
-
-  defp repo_path(bench_case) do
-    repo = bench_case.repo || %{}
-    field(repo, :path) || field(repo, :source_path)
-  end
-
   defp has_before_after?(bench_case),
     do: is_binary(bench_case.code_before) or is_binary(bench_case.code_after)
-
-  defp path_appears_in_diff?(diff, path) do
-    diff = diff || ""
-
-    String.contains?(diff, "+++ b/#{path}") or String.contains?(diff, "--- a/#{path}") or
-      String.contains?(diff, path)
-  end
-
-  defp same_or_suffix_path?(left, right) do
-    left = normalize_path(left)
-    right = normalize_path(right)
-
-    left == right or String.ends_with?(left, "/" <> right) or
-      String.ends_with?(right, "/" <> left)
-  end
-
-  defp run_rg(repo_path, query) do
-    if query == "" do
-      {:error, "No stable query tokens were available."}
-    else
-      case System.cmd("rg", ["-n", "--fixed-strings", "--max-count", "2", query, repo_path],
-             stderr_to_stdout: true
-           ) do
-        {stdout, 0} -> {:ok, stdout |> String.split("\n", trim: true) |> length()}
-        {_stdout, 1} -> {:ok, 0}
-        {_stdout, _status} -> {:error, "`rg` failed against the target checkout."}
-      end
-    end
-  end
-
-  defp rg_query(claim) do
-    claim
-    |> claim_text()
-    |> String.downcase()
-    |> String.replace(~r/[^a-z0-9_]+/, " ")
-    |> String.split()
-    |> Enum.reject(&(String.length(&1) < 6))
-    |> Enum.reject(&(&1 in ~w(should because without generated introduced current failure)))
-    |> List.first()
-    |> to_string()
-  end
 
   defp claim_text(claim) do
     [
@@ -701,6 +621,7 @@ defmodule Sugary.ToolGauntlet do
     - Suite: `#{final.config.suite}` offset #{final.config.offset}, limit #{final.config.limit}
     - Fixed max published claims: #{final.config.max_published}
     - Fixed min publish score: #{final.config.min_score}
+    - Repo materialization run: `#{final.config.materialization_run || "not requested"}`
 
     ## Baselines
 
@@ -725,7 +646,7 @@ defmodule Sugary.ToolGauntlet do
 
     ## Research Discipline
 
-    Each step adds exactly one tool capability to the current kept incumbent. A quarantined tool may be useful for candidate generation, but should not influence publication until a later proof/refutation gate shows it can control noise.
+    Each step adds exactly one tool capability to the current kept incumbent. Repository tools return structured local citations when a materialized workspace or bare git cache exists; unavailable tools do not count as success. A quarantined tool may be useful for candidate generation, but should not influence publication until a later proof/refutation gate shows it can control noise.
     """
   end
 
@@ -749,8 +670,6 @@ defmodule Sugary.ToolGauntlet do
     timestamp = DateTime.utc_now() |> Calendar.strftime("%Y%m%dT%H%M%SZ")
     Path.join(@root, "#{timestamp}-#{id}")
   end
-
-  defp normalize_path(path), do: path |> to_string() |> String.trim()
 
   defp maybe_limit(cases, nil), do: cases
   defp maybe_limit(cases, ""), do: cases

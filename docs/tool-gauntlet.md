@@ -35,6 +35,17 @@ repo_rg
 
 `read_changed_files` verifies whether a claim is grounded in changed files or the diff. `base_preexisting_check` tries to refute claims that are not introduced by the PR. `repo_rg` is neutral unless a local target checkout exists; it should not be counted as evidence when no checkout is available.
 
+The repo/history extension adds a stricter read-only set:
+
+```text
+read_changed_file
+repo_grep
+git_history
+git_grep_history
+```
+
+`read_changed_file` reads the materialized head version of the changed file when available. `repo_grep` runs `rg` against the full materialized head workspace and stores cited matches. `git_history` checks the local bare repository cache for path history. `git_grep_history` uses `git log -S` to find commits that changed a claim token. These are evidence providers only; they do not let a reviewer publish directly.
+
 ## Run
 
 ```sh
@@ -51,6 +62,23 @@ mix escript.build
   --max-published 2 \
   --min-score 2.0
 ```
+
+To test full-repo and history tools on public benchmark cases, first materialize or let the gauntlet materialize the target workspaces:
+
+```sh
+./sugary tool gauntlet \
+  --source-run .sugary/research/runs/<run-id> \
+  --method public-static-proof-gate \
+  --baseline baseline-diff-only \
+  --suite martian-offline \
+  --limit 10 \
+  --tools read_changed_file,repo_grep,git_history,git_grep_history \
+  --materialize true \
+  --max-published 2 \
+  --min-score 2.0
+```
+
+`--materialize true` runs the repo materializer in fetch mode for the selected suite slice. If a workspace or git cache cannot be prepared, the corresponding tool emits `unavailable` evidence instead of failing the experiment.
 
 Artifacts are written under:
 

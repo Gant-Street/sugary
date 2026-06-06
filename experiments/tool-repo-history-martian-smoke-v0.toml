@@ -1,0 +1,16 @@
+id = "tool-repo-history-martian-smoke-v0"
+description = "Unofficial local Martian smoke source run for read-only repo/history tool gauntlets. Not an official benchmark score."
+suite = "martian-offline"
+limit = 10
+offset = 0
+replay_mode = "cache-first"
+max_cost_usd = 0.00
+max_duration_seconds = 1800
+
+[[methods]]
+id = "baseline-diff-only"
+reviewer = "baseline-diff-only"
+
+[[methods]]
+id = "public-static-proof-gate"
+reviewer = "public-static-proof-gate"
