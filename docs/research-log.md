@@ -1425,3 +1425,69 @@ Next research implication:
 - Do not treat more context as a default win.
 - The next loop should test a different generation/search procedure with a locked target, not another context wrapper.
 - The promising variable is multi-pass claim-type targeting over the public benchmark claim-space distribution, while keeping oracle labels and AACR-specific static patterns out of reviewer prompts.
+
+## 2026-06-06: h5i-Compatible Agent Bus Martian Gate
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: transport validated, no review-quality lift
+official benchmark score: not claimed
+Martian API key used: no
+h5i installed: no
+effective agent-bus backend: local-jsonl
+```
+
+What changed:
+
+- Added an append-only `Sugary.AgentBus` with local JSONL as source of truth.
+- Added optional h5i mirroring for `REVIEW_REQUEST` messages when `h5i` is installed.
+- Added a Martian-only orchestration gate that emits blind review/refute/publish messages around the existing Sugary experiment runner.
+- Added agent-bus leakage checks so messages do not expose benchmark oracle data or original case IDs.
+
+Command:
+
+```sh
+./sugary orchestrator martian gate --limit 3 --replay-mode cache-first --agent-bus auto
+```
+
+Run artifacts:
+
+```text
+.sugary/research/orchestrator-gates/20260606T162510Z-martian-orchestrator-h5i-v0
+```
+
+Result:
+
+| Method | Recall | Usefulness | SNR | F1 | Avg Comments | Published | Noise |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `baseline-diff-only` | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0 | 0 |
+| `public-static-proof-gate` | 0.444 | 0.800 | 4.000 | 0.571 | 1.667 | 5 | 1 |
+| `orchestrated-public-pcrs-static-codex-low-team` | 0.444 | 0.444 | 0.800 | 0.444 | 3.000 | 9 | 5 |
+
+Agent bus:
+
+| Metric | Result |
+| --- | ---: |
+| Messages | 23 |
+| h5i events | 0 |
+| Reviewer input leakage fatal | false |
+| Agent-bus leakage fatal | false |
+
+Decision:
+
+```text
+transport_validated_no_quality_lift
+```
+
+Interpretation:
+
+- The h5i-shaped orchestration substrate works without requiring h5i as a dependency.
+- Because h5i was not installed, this run used the local JSONL backend and does not test live h5i behavior.
+- The current team did not beat the best single static proof reviewer on this Martian smoke: same recall, lower usefulness, lower SNR, and more comments.
+- This is not evidence against persistent subagents yet. It is evidence that routing messages alone does not improve quality when reviewer prompts/tools are unchanged.
+
+Next research implication:
+
+- Keep the agent bus as a measurement substrate, not as a product dependency.
+- The next h5i/persistent-agent test must change exactly one variable: persistent memory or cross-agent handoff influencing candidate generation.
+- Do not promote a persistent subagent architecture unless it beats the best single reviewer on Martian smoke without SNR/comment-count regression.
