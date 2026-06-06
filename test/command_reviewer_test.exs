@@ -123,6 +123,40 @@ defmodule Sugary.CommandReviewerTest do
     assert adapter.raw_stderr == ""
   end
 
+  test "successful command reviewer preserves compact self-reported artifacts" do
+    result =
+      run_script("""
+      result = %{
+        reviewer_id: "external-script",
+        method_id: "external-script",
+        class: "research",
+        claims: [],
+        cost: 0.0,
+        latency_ms: 7,
+        artifacts: [
+          %{
+            adapter: "inner-tool-loop",
+            tool_calls: 2,
+            transcript: [
+              %{tool: "read_file", result: %{content: String.duplicate("x", 3000)}}
+            ],
+            raw_stdout_preview: "drop me"
+          }
+        ],
+        errors: []
+      }
+
+      IO.write(:json.encode(result))
+      """)
+
+    [inner] = artifact(result).reviewer_artifacts
+
+    assert inner.adapter == "inner-tool-loop"
+    assert inner.tool_calls == 2
+    refute Map.has_key?(inner, :raw_stdout_preview)
+    assert inner.transcript |> hd() |> get_in([:result, :content]) |> String.length() == 2_000
+  end
+
   test "invalid JSON output becomes a reviewer failure" do
     result = run_script(~S|IO.write("not json")|)
 

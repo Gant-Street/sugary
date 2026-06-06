@@ -1891,3 +1891,99 @@ Next research implication:
 - Repo/history tools should not be dumped into the prompt as passive context.
 - The next tooling test should be interactive or staged: generate a hypothesis, ask one targeted repo/history question, then prove/refute that specific hypothesis.
 - Every tool must have hard resource budgets before it enters a long-running loop.
+
+## 2026-06-06: Bounded Codex Tool-Loop Smoke v0
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: controlled negative result
+suite: Martian offline local smoke, cases 1-3
+official benchmark score: not claimed
+model: Codex CLI, gpt-5.5 low
+```
+
+Question:
+
+```text
+If Codex can request bounded repository tools during review, does it use them
+when useful, and does that improve review outcomes versus the same no-tool
+reviewer?
+```
+
+What changed:
+
+- Added `scripts/reviewers/codex_tool_loop_reviewer.exs`.
+- The wrapper exposes bounded `changed_files`, `repo_grep`, and `read_file` tools.
+- The model does not receive target workspace paths. It sees sanitized PR input and tool observations only.
+- Added fake-mode tests for the wrapper contract and bounded file-read path.
+- Added `experiments/codex-tool-loop-martian-smoke-v0.toml`.
+- Added compact preservation of self-reported command-reviewer artifacts so tool-loop transcripts survive redaction.
+
+Important correction:
+
+- The first live attempt was invalid because the structured-output schema for tool `args` was too loose and Codex exited before any tool call.
+- The schema now has fixed nullable args fields: `query`, `path`, `start_line`, and `end_line`.
+- The corrected optional-tool run showed zero tool calls. Codex chose to finalize from the diff on all three cases.
+- A third arm required at least one repository tool observation before publishing non-empty claims.
+
+Commands:
+
+```sh
+./sugary repo materialize \
+  --suite martian-offline \
+  --limit 3 \
+  --offset 0 \
+  --mode fetch \
+  --id codex-tool-loop-smoke-materialization
+
+./sugary experiment run \
+  experiments/codex-tool-loop-martian-smoke-v0.toml \
+  --replay-mode refresh
+
+./sugary experiment run \
+  experiments/codex-tool-loop-martian-smoke-v0.toml \
+  --replay-mode cache-first
+```
+
+Run artifacts:
+
+```text
+.sugary/research/repo-materializations/20260606T220544Z-codex-tool-loop-smoke-materialization
+.sugary/research/runs/20260606T220825Z-codex-tool-loop-martian-smoke-v0
+.sugary/research/runs/20260606T221237Z-codex-tool-loop-martian-smoke-v0
+```
+
+Result:
+
+| Method | Tool policy | F1 | Recall | Precision | Usefulness | SNR | Hits | Noise | Published | Avg comments/PR |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-low-no-tools` | no repo tools | 0.250 | 0.222 | 0.286 | 0.286 | 0.400 | 2 | 5 | 7 | 2.333 |
+| `codex-gpt-5.5-low-tool-loop` | optional tools | 0.133 | 0.111 | 0.167 | 0.167 | 0.200 | 1 | 5 | 6 | 2.000 |
+| `codex-gpt-5.5-low-tool-loop-required` | tool evidence required before claims | 0.154 | 0.111 | 0.250 | 0.250 | 0.333 | 1 | 3 | 4 | 1.333 |
+
+Tool-use observations:
+
+| Method | Observed behavior |
+| --- | --- |
+| `codex-gpt-5.5-low-tool-loop` | Used zero tools on all three cases; rationale said the diff was sufficient. |
+| `codex-gpt-5.5-low-tool-loop-required` | Used repo tools on all three cases, mainly `read_file`; one first-turn `read_file` had a null path and failed before the model recovered with a valid file read. |
+
+Decision:
+
+```text
+Do not promote the current bounded tool-loop reviewer.
+Keep the wrapper and artifact plumbing as experimental infrastructure.
+```
+
+Interpretation:
+
+- Merely exposing repo tools does not make the model use them.
+- Requiring tool evidence reduced comments and noise relative to optional tool-loop, but did not recover recall and still trailed the no-tool baseline.
+- The current tool policy is too weak: the model needs a staged hypothesis → targeted tool query → refutation/finalization protocol, not just free-form optional tools.
+- The result supports a bitter-pilled direction, but not this implementation: tools should be part of candidate generation and proof/refutation, with measurable promotion gates.
+
+Next research implication:
+
+- Test a staged reviewer that first generates candidate hypotheses, then forces one targeted repo read/grep per hypothesis, then runs a separate refuter before publishing.
+- Add tool-quality metrics: invalid tool calls, useful tool calls, claims with cited tool observations, and claims contradicted by tool observations.
+- Do not add bash/test execution until simple read/grep tools show a positive lift under a staged protocol.

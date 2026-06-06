@@ -177,17 +177,61 @@ defmodule Sugary.CommandReviewer do
     with {:ok, decoded} <- decode_stdout(stdout),
          {:ok, result} <- validate_result(method, decoded) do
       quality_warnings = Sugary.ExternalReviewers.quality_warnings(result.claims, input, method)
+      reviewer_artifacts = compact_reviewer_artifacts(result.artifacts || [])
 
       {:ok,
        %{
          result
-         | artifacts: [Map.put(artifact, :quality_warnings, quality_warnings)],
+         | artifacts: [
+             artifact
+             |> Map.put(:quality_warnings, quality_warnings)
+             |> Map.put(:reviewer_artifacts, reviewer_artifacts)
+           ],
            cost: Map.get(method, :estimated_cost_usd, result.cost || 0.0)
        }}
     else
       {:error, reason} -> {:error, reason}
     end
   end
+
+  defp compact_reviewer_artifacts(artifacts) do
+    artifacts
+    |> List.wrap()
+    |> Enum.take(5)
+    |> Enum.map(&compact_value(&1, 0))
+  end
+
+  defp compact_value(value, depth) when depth >= 5 do
+    value |> inspect(limit: 20, printable_limit: 200) |> String.slice(0, 500)
+  end
+
+  defp compact_value(%{} = map, depth) do
+    map
+    |> Map.drop([
+      :raw_stdout,
+      "raw_stdout",
+      :raw_stderr,
+      "raw_stderr",
+      :raw_stdout_preview,
+      "raw_stdout_preview",
+      :raw_stderr_preview,
+      "raw_stderr_preview",
+      :raw_stderr_tail,
+      "raw_stderr_tail",
+      :output_preview,
+      "output_preview"
+    ])
+    |> Map.new(fn {key, value} -> {key, compact_value(value, depth + 1)} end)
+  end
+
+  defp compact_value(list, depth) when is_list(list) do
+    list
+    |> Enum.take(25)
+    |> Enum.map(&compact_value(&1, depth + 1))
+  end
+
+  defp compact_value(value, _depth) when is_binary(value), do: String.slice(value, 0, 2_000)
+  defp compact_value(value, _depth), do: value
 
   defp decode_stdout(stdout) do
     {:ok, Sugary.Json.decode!(stdout)}
