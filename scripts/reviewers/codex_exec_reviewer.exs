@@ -12,6 +12,23 @@ max_claims = String.to_integer(System.get_env("SUGARY_CODEX_MAX_CLAIMS") || "3")
 inner_timeout_ms = String.to_integer(System.get_env("SUGARY_CODEX_INNER_TIMEOUT_MS") || "120000")
 codex = System.get_env("SUGARY_CODEX_BIN") || "codex"
 cwd = System.get_env("SUGARY_CODEX_CWD") || "."
+repo_tools = get_in(bundle, ["metadata", "repo_tools"])
+
+repo_tools_section =
+  if is_map(repo_tools) do
+    stats = Map.get(repo_tools, "stats", %{})
+
+    """
+    Fixed repo-tools evidence packet:
+    - metadata.repo_tools is present.
+    - It was produced by bounded read-only tools before you were invoked.
+    - Use it as supporting or refuting evidence, but do not treat it as proof by itself.
+    - Do not inspect the filesystem directly.
+    - Packet stats: #{:json.encode(stats)}
+    """
+  else
+    ""
+  end
 
 schema = %{
   type: "object",
@@ -70,6 +87,8 @@ You are an external code review tool inside the Sugary autoresearch harness.
 Return JSON only, following the provided schema.
 
 Review only the sanitized ReviewInputBundle below. Do not use fixture oracle data. Do not infer a bug solely from case_id, suite, tags, or benchmark-looking names. The current filesystem is the Sugary harness, not the target project, so do not inspect repository files.
+
+#{repo_tools_section}
 
 Publish only defects that appear introduced by this PR. Prefer concrete bug, security, contract, runtime, or test-gap findings. Avoid style comments and speculative edge cases. If evidence is weak, return no claims.
 

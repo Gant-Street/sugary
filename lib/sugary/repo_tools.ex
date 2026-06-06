@@ -290,6 +290,13 @@ defmodule Sugary.RepoTools do
     end)
   end
 
+  def git_metadata(bench_case) do
+    case git_context(bench_case) do
+      {:ok, repo_dir, ref} -> %{git_dir: repo_dir, head_ref: ref}
+      {:error, _reason} -> nil
+    end
+  end
+
   def changed_files(bench_case) do
     context = field(bench_case, :context, %{})
     allowed = field(context, :allowed, context)

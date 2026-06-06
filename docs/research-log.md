@@ -1806,3 +1806,88 @@ Next research implication:
 - Treat repo grep/history as candidate-generation and refutation tools, not just replay-time score boosts.
 - The next live/tool loop should let an agent ask a small number of repo/history questions before proposing claims.
 - Do not add bash/test execution until repo/history tool use has a live, locked comparison against a no-tool agent.
+
+## 2026-06-06: Fixed Repo-Tools Packet Live Codex Smoke v0
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: controlled negative result
+suite: Martian offline local smoke, cases 1-3
+official benchmark score: not claimed
+model: Codex CLI, gpt-5.5 low
+```
+
+Question:
+
+```text
+Does giving the same Codex diff-only reviewer a bounded repo/history evidence
+packet improve candidate generation over no repo-tools packet?
+```
+
+What changed:
+
+- Added `Sugary.RepoToolPack`.
+- Added `include_repo_tools = true` as an explicit reviewer/method flag.
+- Updated `codex_exec_reviewer.exs` to mention `metadata.repo_tools` when present.
+- Added the A/B manifest `experiments/codex-repo-tools-packet-martian-smoke-v0.toml`.
+
+Tool-safety correction:
+
+- First live attempt stalled before the repo-tools arm wrote its first input bundle.
+- Cause: the packet builder used unbounded repo/history commands; `rg --max-count` capped matches per file, not total matches.
+- Fix: added hard command timeouts and a total match cap per identifier.
+- Direct packet build after the fix completed in about 5 seconds on the first Martian case and produced a bounded packet around 21 KB.
+
+Commands:
+
+```sh
+./sugary repo materialize \
+  --suite martian-offline \
+  --limit 3 \
+  --offset 0 \
+  --mode fetch \
+  --id codex-repo-tools-packet-smoke-materialization
+
+./sugary experiment run experiments/codex-repo-tools-packet-martian-smoke-v0.toml
+```
+
+Run artifacts:
+
+```text
+.sugary/research/repo-materializations/20260606T190325Z-codex-repo-tools-packet-smoke-materialization
+.sugary/research/runs/20260606T191616Z-codex-repo-tools-packet-martian-smoke-v0
+```
+
+Result:
+
+| Method | F1 | Recall | Precision | Usefulness | SNR | Hits | Noise | Published | Latency ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-low-no-tools` | 0.500 | 0.444 | 0.571 | 0.571 | 1.333 | 4 | 3 | 7 | 69,901 |
+| `codex-gpt-5.5-low-repo-tools` | 0.286 | 0.222 | 0.400 | 0.400 | 0.667 | 2 | 3 | 5 | 59,037 |
+
+Packet availability:
+
+| Case | Changed file reads | Repo grep matches | Git history entries | Git grep history entries |
+| --- | ---: | ---: | ---: | ---: |
+| Martian 1 | 3 | 60 | 9 | 6 |
+| Martian 2 | 12 | 60 | 12 | 6 |
+| Martian 3 | 12 | 60 | 15 | 8 |
+
+Decision:
+
+```text
+Do not promote fixed repo-tools packets for the reviewer path.
+```
+
+Interpretation:
+
+- The fixed packet provided real repository context, but it hurt candidate selection on this smoke slice.
+- It reduced comments from 7 to 5, but dropped hits from 4 to 2 and did not reduce noise.
+- This suggests the packet adds distracting context unless the reviewer has a stronger policy for when to use or ignore tool evidence.
+- The negative result is stronger than the previous replay-only result because the model saw the packet before generating claims.
+
+Next research implication:
+
+- Repo/history tools should not be dumped into the prompt as passive context.
+- The next tooling test should be interactive or staged: generate a hypothesis, ask one targeted repo/history question, then prove/refute that specific hypothesis.
+- Every tool must have hard resource budgets before it enters a long-running loop.

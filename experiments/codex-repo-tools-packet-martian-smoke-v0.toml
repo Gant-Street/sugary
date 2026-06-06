@@ -1,0 +1,43 @@
+id = "codex-repo-tools-packet-martian-smoke-v0"
+description = "Unofficial local Martian smoke: same Codex diff-only reviewer with and without a fixed repo/history evidence packet. Not an official benchmark score."
+suite = "martian-offline"
+limit = 3
+offset = 0
+replay_mode = "cache-first"
+max_cost_usd = 0.00
+max_duration_seconds = 1800
+
+[[reviewers]]
+id = "codex-gpt-5.5-low-no-tools"
+type = "command"
+enabled = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_exec_reviewer.exs"]
+timeout_ms = 180000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "diff_only"]
+env = ["SUGARY_REVIEWER_ID=codex-gpt-5.5-low-no-tools", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000"]
+
+[[reviewers]]
+id = "codex-gpt-5.5-low-repo-tools"
+type = "command"
+enabled = true
+include_repo_tools = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_exec_reviewer.exs"]
+timeout_ms = 180000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "fixed_repo_tool_packet", "repo_grep", "git_history"]
+env = ["SUGARY_REVIEWER_ID=codex-gpt-5.5-low-repo-tools", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000"]

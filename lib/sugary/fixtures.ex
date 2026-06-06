@@ -103,6 +103,7 @@ defmodule Sugary.Fixtures do
       workspace -> Map.put(base, :workspace, workspace)
     end
     |> maybe_put_evidence_pack(bench_case, method)
+    |> maybe_put_repo_tools(bench_case, method)
   end
 
   defp workspace_metadata(bench_case, method) do
@@ -177,6 +178,14 @@ defmodule Sugary.Fixtures do
   defp maybe_put_evidence_pack(metadata, bench_case, method) do
     if Map.get(method, :include_evidence_pack) == true do
       Map.put(metadata, :evidence_pack, Sugary.EvidencePack.build(bench_case, method))
+    else
+      metadata
+    end
+  end
+
+  defp maybe_put_repo_tools(metadata, bench_case, method) do
+    if Map.get(method, :include_repo_tools) == true do
+      Map.put(metadata, :repo_tools, Sugary.RepoToolPack.build(bench_case, method))
     else
       metadata
     end
