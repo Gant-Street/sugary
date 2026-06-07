@@ -187,6 +187,15 @@ defmodule Sugary.ExternalReviewersTest do
     replay =
       Sugary.CommandReviewer.run(
         %{
+          method(args: [script], env: ["SUGARY_TEST_CLAIM=second"])
+          | replay_mode: "replay-only"
+        },
+        input()
+      )
+
+    miss =
+      Sugary.CommandReviewer.run(
+        %{
           method(args: [script], env: ["SUGARY_TEST_CLAIM=ignored"])
           | replay_mode: "replay-only"
         },
@@ -196,6 +205,128 @@ defmodule Sugary.ExternalReviewersTest do
     assert hd(first.claims).dedupe_key == "first"
     assert hd(refreshed.claims).dedupe_key == "second"
     assert hd(replay.claims).dedupe_key == "second"
+    assert miss.claims == []
+    assert [%{reason: "skipped", detail: "replay cache miss"}] = miss.errors
+  end
+
+  test "cache key changes when reviewer script content changes" do
+    script = write_script("mutable_reviewer.exs", reviewer_script_for_claim("first"))
+
+    first =
+      Sugary.CommandReviewer.run(
+        %{method(args: [script]) | replay_mode: "live"},
+        input()
+      )
+
+    File.write!(script, reviewer_script_for_claim("second"))
+
+    second =
+      Sugary.CommandReviewer.run(
+        %{method(args: [script]) | replay_mode: "cache-first"},
+        input()
+      )
+
+    assert first_artifact(first).execution_mode == "live"
+    assert hd(first.claims).dedupe_key == "first"
+    assert first_artifact(second).execution_mode == "live"
+    assert first_artifact(second).cache_hit == false
+    assert hd(second.claims).dedupe_key == "second"
+  end
+
+  test "cache key changes when explicit env references a changed local file" do
+    script =
+      write_script(
+        "file_env_reviewer.exs",
+        """
+        _input = IO.read(:stdio, :eof)
+        id = System.fetch_env!("SUGARY_TEST_CLAIM_FILE") |> File.read!() |> String.trim()
+        IO.write(:json.encode(%{
+          reviewer_id: "external-test-reviewer",
+          method_id: "external-test-reviewer",
+          class: "research",
+          claims: [
+            %{
+              id: id,
+              claim: "Claim " <> id,
+              category: "bug",
+              severity: "high",
+              confidence: 0.8,
+              path: "src/preferences.ex",
+              start_line: 1,
+              end_line: 1,
+              introduced_by_pr: true,
+              evidence: [%{type: "fixture", tier: 4, strength: "medium", summary: "file env fixture"}],
+              dedupe_key: id,
+              source: %{method: "external-test-reviewer"},
+              publish_decision: "candidate"
+            }
+          ],
+          cost: 0.0,
+          latency_ms: 1,
+          artifacts: [],
+          errors: []
+        }))
+        """
+      )
+
+    claim_file = write_script("claim.txt", "first")
+
+    first =
+      Sugary.CommandReviewer.run(
+        %{
+          method(args: [script], env: ["SUGARY_TEST_CLAIM_FILE=#{claim_file}"])
+          | replay_mode: "live"
+        },
+        input()
+      )
+
+    File.write!(claim_file, "second")
+
+    second =
+      Sugary.CommandReviewer.run(
+        %{
+          method(args: [script], env: ["SUGARY_TEST_CLAIM_FILE=#{claim_file}"])
+          | replay_mode: "cache-first"
+        },
+        input()
+      )
+
+    assert hd(first.claims).dedupe_key == "first"
+    assert first_artifact(second).execution_mode == "live"
+    assert first_artifact(second).cache_hit == false
+    assert hd(second.claims).dedupe_key == "second"
+  end
+
+  defp reviewer_script_for_claim(id) do
+    """
+    _input = IO.read(:stdio, :eof)
+    IO.write(:json.encode(%{
+      reviewer_id: "external-test-reviewer",
+      method_id: "external-test-reviewer",
+      class: "research",
+      claims: [
+        %{
+          id: "#{id}",
+          claim: "Claim #{id}",
+          category: "bug",
+          severity: "high",
+          confidence: 0.8,
+          path: "src/preferences.ex",
+          start_line: 1,
+          end_line: 1,
+          introduced_by_pr: true,
+          evidence: [%{type: "fixture", tier: 4, strength: "medium", summary: "script fixture"}],
+          dedupe_key: "#{id}",
+          source: %{method: "external-test-reviewer"},
+          publish_decision: "candidate"
+        }
+      ],
+      cost: 0.0,
+      latency_ms: 1,
+      artifacts: [],
+      errors: []
+    }))
+    """
   end
 
   test "text-to-reviewer-result normalizes plain text into low-confidence claims" do

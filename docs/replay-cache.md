@@ -15,13 +15,21 @@ The cache key includes:
 - reviewer id
 - reviewer manifest hash
 - command and args hash
+- local reviewer script/content hashes for command or args that point at files
 - sanitized input bundle hash
 - environment shape hash, excluding secret values
+- explicit non-secret environment value hashes
+- local file content hashes for explicit non-secret environment values that point at files
 - required secret names
 - tool version when declared
 - Sugary protocol version
 
-Changing the input bundle, command, args, reviewer manifest, or declared environment shape invalidates the cache.
+Changing the input bundle, command, args, reviewer manifest, declared environment shape,
+non-secret explicit environment values, reviewer script content, or referenced local artifact
+content invalidates the cache.
+
+This matters for research ablations: if a reviewer wrapper, prompt file, invariant ledger, or
+local normalizer changes, `cache-first` should not silently replay stale reviewer output.
 
 ## Replay Modes
 

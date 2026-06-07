@@ -2344,3 +2344,105 @@ Next research implication:
   - contradicted by repo invariant
 - Test typed gates on a larger replayed Martian slice only after cache-key integrity is fixed.
 - Do not add h5i, Jido, persistent subagents, or terminal execution as scoring variables until the proof/refutation publisher is reliably improving precision at fixed recall.
+
+## 2026-06-07: PCRS v8 Dev10 + Content-Addressed Replay Keys
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: positive local dev10 result, not product-ready
+suite: Martian offline local smoke, cases 1-10
+official benchmark score: not claimed
+model: Codex CLI, gpt-5.5 low
+```
+
+Question:
+
+```text
+After fixing replay-cache integrity, does the v8 typed proof gate still improve
+over v7 and no-tool Codex on a larger Martian local slice?
+```
+
+What changed:
+
+- Strengthened command reviewer replay keys.
+- Cache keys now include:
+  - local reviewer script/content hashes for command or args that point at files
+  - explicit non-secret environment value hashes
+  - local file content hashes for explicit non-secret environment values that point at files
+- Added tests proving cache invalidates when:
+  - reviewer script content changes
+  - an explicit env-referenced local file changes
+  - explicit non-secret env values change
+- Added `experiments/codex-staged-typed-proof-gate-martian-dev10-v0.toml`.
+- Ran a fresh cache-first dev10 experiment. All 30 reviewer-case executions were live with `cache_hit=false`, confirming the old stale cache was not reused.
+
+Command:
+
+```sh
+./sugary experiment run \
+  experiments/codex-staged-typed-proof-gate-martian-dev10-v0.toml \
+  --replay-mode cache-first
+```
+
+Run artifact:
+
+```text
+.sugary/research/runs/20260607T172124Z-codex-staged-typed-proof-gate-martian-dev10-v0
+```
+
+Result:
+
+| Method | F1 | Recall | Precision | Usefulness | SNR | Hits | Noise | Published | Avg comments | Latency ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-low-no-tools` | 0.211 | 0.143 | 0.400 | 0.400 | 0.667 | 4 | 6 | 10 | 1.000 | 173,047 |
+| `codex-gpt-5.5-low-staged-proof-v7` | 0.341 | 0.250 | 0.538 | 0.538 | 1.167 | 7 | 6 | 13 | 1.300 | 999,423 |
+| `codex-gpt-5.5-low-staged-typed-proof-v8` | 0.400 | 0.286 | 0.667 | 0.667 | 2.000 | 8 | 4 | 12 | 1.200 | 927,374 |
+
+Proof-gate aggregate:
+
+| Metric | v7 | v8 |
+| --- | ---: | ---: |
+| Matched repo invariants | 0 | 2 |
+| Missing upload-limit proof suppressions | 0 | 3 |
+| Missing resource-bound proof suppressions | 0 | 1 |
+| Missing TopicUser absence proof suppressions | 0 | 2 |
+| Missing controllable-input proof suppressions | 0 | 1 |
+| Duplicate-root-cause suppressions | 1 | 1 |
+
+Decision:
+
+```text
+Promote PCRS v8 typed proof gates as the next research candidate.
+Do not treat it as product-ready because serial staged latency is unacceptable.
+```
+
+Interpretation:
+
+- The three-case v8 negative was too small and partly affected by stale-cache risk.
+- On dev10 with content-addressed replay keys, v8 beat no-tool Codex and v7 on:
+  - F1
+  - recall
+  - precision/usefulness
+  - SNR
+  - fewer comments than v7
+- The typed proof gate was not merely decorative:
+  - it preserved invariant-supported upload-limit claims
+  - it suppressed unsupported upload-limit, SQL-injection, resource-exhaustion, and `TopicUser` nil claims
+- The remaining v8 noise is mostly duplicate publishing, not broad hallucination:
+  - 3 duplicate-hit events
+  - 4 total noise comments
+- This gives a concrete next bottleneck: same-root-cause dedupe and value-ranked publishing, not more candidate generation.
+- Latency remains severe:
+  - no-tool: 173s for 10 cases
+  - v8: 927s for 10 cases
+  - staged PCRS needs parallel validation, fewer validation calls, or cheaper deterministic proof passes before product use.
+
+Next research implication:
+
+- Keep PCRS v8 as the current staged research candidate.
+- Do not add h5i, Jido, persistent subagents, or terminal execution yet.
+- Next highest-value loop:
+  - improve duplicate/root-cause suppression for v8
+  - keep candidate generation unchanged
+  - replay dev10 and a fresh adjacent slice under the fixed cache key
+  - promotion target: preserve v8's 8 hits while cutting duplicate noise by at least 2 and reducing published comments

@@ -26,6 +26,8 @@ defmodule Sugary.CommandReviewer do
       command_hash: stable_hash(%{command: method.command, args: Map.get(method, :args, [])}),
       input_hash: sha256(input_json),
       env_allowlist_hash: env_shape_hash(method),
+      explicit_env_hash: explicit_env_hash(method),
+      local_artifact_hash: local_artifact_hash(method),
       tool_version: Map.get(method, :tool_version, "unknown")
     }
 
@@ -377,6 +379,124 @@ defmodule Sugary.CommandReviewer do
         |> Enum.sort()
     }
     |> stable_hash()
+  end
+
+  defp explicit_env_hash(method) do
+    method
+    |> Map.get(:env, [])
+    |> List.wrap()
+    |> Enum.flat_map(&parse_env_entry/1)
+    |> Enum.reject(fn {name, _value} -> secret_env_name?(name) end)
+    |> Enum.map(fn {name, value} ->
+      %{name: name, value: local_file_hash_or_value_hash(value)}
+    end)
+    |> Enum.sort()
+    |> stable_hash()
+  end
+
+  defp local_artifact_hash(method) do
+    method
+    |> local_artifact_paths()
+    |> Enum.map(fn path -> %{path: path, hash: file_hash(path)} end)
+    |> Enum.sort()
+    |> stable_hash()
+  end
+
+  defp local_artifact_paths(method) do
+    command_paths =
+      method
+      |> Map.get(:command)
+      |> List.wrap()
+
+    arg_paths =
+      method
+      |> Map.get(:args, [])
+      |> List.wrap()
+
+    env_paths =
+      method
+      |> Map.get(:env, [])
+      |> List.wrap()
+      |> Enum.flat_map(&parse_env_entry/1)
+      |> Enum.reject(fn {name, _value} -> secret_env_name?(name) end)
+      |> Enum.map(fn {_name, value} -> value end)
+
+    declared_paths =
+      method
+      |> Map.get(:cache_artifacts, Map.get(method, :cache_files, []))
+      |> List.wrap()
+
+    (command_paths ++ arg_paths ++ env_paths ++ declared_paths)
+    |> Enum.map(&to_string/1)
+    |> Enum.flat_map(&candidate_local_paths(method, &1))
+    |> Enum.uniq()
+    |> Enum.filter(&File.regular?/1)
+  end
+
+  defp candidate_local_paths(method, value) do
+    trimmed = String.trim(value)
+
+    cond do
+      trimmed == "" ->
+        []
+
+      String.contains?(trimmed, "://") ->
+        []
+
+      Path.type(trimmed) == :absolute ->
+        [Path.expand(trimmed)]
+
+      local_path_candidate?(trimmed) ->
+        cwd = method |> Map.get(:cwd, ".") |> to_string()
+        [Path.expand(trimmed, cwd), Path.expand(trimmed)]
+
+      true ->
+        []
+    end
+  end
+
+  defp local_path_candidate?(value) do
+    String.contains?(value, "/") or
+      Path.extname(value) in [
+        ".exs",
+        ".ex",
+        ".py",
+        ".sh",
+        ".js",
+        ".ts",
+        ".json",
+        ".toml",
+        ".yml",
+        ".yaml"
+      ]
+  end
+
+  defp local_file_hash_or_value_hash(value) do
+    value = to_string(value)
+
+    case candidate_local_paths(%{cwd: "."}, value) |> Enum.find(&File.regular?/1) do
+      nil -> %{kind: "value_hash", hash: sha256(value)}
+      path -> %{kind: "file_hash", path: path, hash: file_hash(path)}
+    end
+  end
+
+  defp file_hash(path) do
+    path
+    |> File.read!()
+    |> sha256()
+  end
+
+  defp secret_env_name?(name) do
+    name =
+      name
+      |> to_string()
+      |> String.upcase()
+
+    name == "PASSWORD" or
+      String.ends_with?(name, "_KEY") or
+      String.ends_with?(name, "_TOKEN") or
+      String.ends_with?(name, "_SECRET") or
+      name in ["GITHUB_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY"]
   end
 
   defp env_entry_names(%{} = map), do: Enum.map(map, fn {key, _value} -> to_string(key) end)
