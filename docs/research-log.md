@@ -1987,3 +1987,117 @@ Next research implication:
 - Test a staged reviewer that first generates candidate hypotheses, then forces one targeted repo read/grep per hypothesis, then runs a separate refuter before publishing.
 - Add tool-quality metrics: invalid tool calls, useful tool calls, claims with cited tool observations, and claims contradicted by tool observations.
 - Do not add bash/test execution until simple read/grep tools show a positive lift under a staged protocol.
+
+## 2026-06-07: Claude-Style Staged Codex Review Smoke v0
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: mixed/negative result
+suite: Martian offline local smoke, cases 1-3
+official benchmark score: not claimed
+model: Codex CLI, gpt-5.5 low
+```
+
+Question:
+
+```text
+Does a Claude-Code-style staged architecture improve review quality:
+specialist candidate agents -> independent repo-evidence validators -> dedupe/rank/publish?
+```
+
+Why this was tested:
+
+- Claude Code Review publicly describes a staged shape: multiple specialist reviewers, validation, dedupe, severity ranking, and repo-specific policy.
+- Our previous bounded tool-loop showed that merely exposing tools is not enough: the model often chose not to use them.
+- This experiment moves repo tools into a validation stage instead of relying on optional free-form tool calls.
+
+What changed:
+
+- Added `scripts/reviewers/codex_staged_review_reviewer.exs`.
+- Added three specialist candidate roles:
+  - `diff-bug`
+  - `changed-code-security`
+  - `contract-regression`
+- Added bounded validation evidence per candidate:
+  - `changed_files`
+  - `read_file`
+  - optional `repo_grep`
+- Added independent validator calls that return `validated | rejected | uncertain`.
+- Added validated-claim dedupe before final publishing.
+- Added `experiments/codex-staged-review-martian-smoke-v0.toml`.
+- Added fake-mode wrapper tests.
+
+Important correction:
+
+- First staged run was invalid: the wrapper crashed with `KeyError :reasoning_effort` before candidate generation.
+- Fixed the config propagation and reran with `--replay-mode refresh`.
+- Rebuilt the escript before the final post-dedupe run so command-reviewer artifacts preserve compact self-reported staged artifacts.
+
+Commands:
+
+```sh
+./sugary experiment run \
+  experiments/codex-staged-review-martian-smoke-v0.toml \
+  --replay-mode refresh
+```
+
+Run artifacts:
+
+```text
+.sugary/research/runs/20260607T152305Z-codex-staged-review-martian-smoke-v0
+.sugary/research/runs/20260607T153222Z-codex-staged-review-martian-smoke-v0
+```
+
+Pre-dedupe corrected run:
+
+| Method | F1 | Recall | Precision | Usefulness | SNR | Hits | Noise | Published | Latency ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-low-no-tools` | 0.308 | 0.222 | 0.500 | 0.500 | 1.000 | 2 | 2 | 4 | 75,882 |
+| `codex-gpt-5.5-low-tool-loop-required` | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0 | 4 | 4 | 64,834 |
+| `codex-gpt-5.5-low-staged-validated` | 0.333 | 0.333 | 0.333 | 0.333 | 0.500 | 3 | 6 | 9 | 314,581 |
+
+Final post-dedupe run:
+
+| Method | F1 | Recall | Precision | Usefulness | SNR | Hits | Noise | Published | Latency ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-low-no-tools` | 0.267 | 0.222 | 0.333 | 0.333 | 0.500 | 2 | 4 | 6 | 61,750 |
+| `codex-gpt-5.5-low-tool-loop-required` | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0 | 4 | 4 | 74,365 |
+| `codex-gpt-5.5-low-staged-validated` | 0.222 | 0.222 | 0.222 | 0.222 | 0.286 | 2 | 7 | 9 | 329,178 |
+
+Observed staged behavior:
+
+| Case | Candidates | Validations | Validated | Published |
+| --- | ---: | ---: | ---: | ---: |
+| Martian 1 | 6 | 4 | 3 | 3 |
+| Martian 2 | 6 | 4 | 3 | 3 |
+| Martian 3 | 6 | 4 | 3 | 3 |
+
+Decision:
+
+```text
+Do not promote staged review v0.
+Keep staged candidate generation and validator artifacts as experimental infrastructure.
+```
+
+Interpretation:
+
+- Staged candidate generation increased breadth: it found additional plausible true positives in the pre-dedupe run.
+- The validator was too permissive. It validated many plausible claims that did not match benchmark defects, so precision/usefulness dropped.
+- Dedupe v0 was not strong enough; final published comments still hit the max comment budget on every case.
+- Latency is material: roughly 5.5 minutes for 3 cases versus about 1 minute for the no-tool baseline.
+- The staged architecture is directionally aligned with PCRS/Claude-style review, but our publisher/refuter is the current bottleneck.
+
+Next research implication:
+
+- Do not add more candidate agents yet.
+- Add a stricter proof/refutation gate after validation:
+  - reject duplicate same-root-cause claims
+  - require explicit introduced-by-PR proof
+  - require expected-failure evidence, not just plausible evidence
+  - cap publication by value, not just count
+- Add validator calibration metrics:
+  - validator false-accept rate
+  - duplicate validated claims
+  - validated-but-unmatched claims
+  - validation latency per accepted claim
+- Consider parallel candidate/validator execution only after the quality gate improves; parallelism solves latency, not noise.

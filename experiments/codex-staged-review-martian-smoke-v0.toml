@@ -1,0 +1,67 @@
+id = "codex-staged-review-martian-smoke-v0"
+description = "Unofficial local Martian smoke: compare no-tools and tool-loop Codex against a Claude-style staged candidate-plus-validator reviewer. Not an official benchmark score."
+suite = "martian-offline"
+limit = 3
+offset = 0
+replay_mode = "cache-first"
+max_cost_usd = 0.00
+max_duration_seconds = 3600
+
+[[reviewers]]
+id = "codex-gpt-5.5-low-no-tools"
+type = "command"
+enabled = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_exec_reviewer.exs"]
+timeout_ms = 180000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "diff_only"]
+env = ["SUGARY_REVIEWER_ID=codex-gpt-5.5-low-no-tools", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000"]
+
+[[reviewers]]
+id = "codex-gpt-5.5-low-tool-loop-required"
+type = "command"
+enabled = true
+include_workspace = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_tool_loop_reviewer.exs"]
+timeout_ms = 420000
+stdout_limit = 524288
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "bounded_tool_loop", "required_repo_evidence", "changed_files", "repo_grep", "read_file"]
+evidence = "tool_observation"
+refutation = "none"
+ranking = "expected_value_stub"
+env = ["SUGARY_REVIEWER_ID=codex-gpt-5.5-low-tool-loop-required", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000", "SUGARY_TOOL_LOOP_MAX_TURNS=4", "SUGARY_TOOL_LOOP_MAX_TOOL_CALLS=3", "SUGARY_TOOL_LOOP_REQUIRE_TOOL_BEFORE_CLAIMS=1"]
+
+[[reviewers]]
+id = "codex-gpt-5.5-low-staged-validated"
+type = "command"
+enabled = true
+include_workspace = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_staged_review_reviewer.exs"]
+timeout_ms = 900000
+stdout_limit = 524288
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "staged_review", "specialist_candidates", "independent_validation", "read_file", "repo_grep"]
+evidence = "staged_validation"
+refutation = "validator_refutation"
+ranking = "expected_value_stub"
+env = ["SUGARY_REVIEWER_ID=codex-gpt-5.5-low-staged-validated", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000", "SUGARY_STAGED_MAX_CANDIDATES_PER_ROLE=2", "SUGARY_STAGED_MAX_VALIDATIONS=4", "SUGARY_STAGED_MIN_VALIDATION_CONFIDENCE=0.72"]
