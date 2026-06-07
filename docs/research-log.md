@@ -2101,3 +2101,136 @@ Next research implication:
   - validated-but-unmatched claims
   - validation latency per accepted claim
 - Consider parallel candidate/validator execution only after the quality gate improves; parallelism solves latency, not noise.
+
+## 2026-06-07: PCRS v7 Staged Proof Gate
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: positive local smoke, research-only latency
+suite: Martian offline local smoke, cases 1-3
+official benchmark score: not claimed
+model: Codex CLI, gpt-5.5 low
+```
+
+Question:
+
+```text
+Can the staged architecture recover signal by adding a strict proof/refutation
+and duplicate-root-cause gate before publication, without adding more agents,
+tools, memory, or passive context?
+```
+
+What changed:
+
+- Extended `scripts/reviewers/codex_staged_review_reviewer.exs` with `SUGARY_STAGED_PROOF_GATE=1`.
+- Added a local proof score after validation.
+- Required evidence for:
+  - validator acceptance
+  - introduced-by-PR
+  - bounded repo evidence
+  - failure path
+  - expected failure language
+  - changed-code evidence
+- Suppressed claims for:
+  - low proof score
+  - speculative language
+  - missing expected failure
+  - missing failure path
+  - strong counterargument
+  - duplicate root cause
+- Reworked root-cause keys to prefer shared symbol anchors plus normalized failure signatures before falling back to path-local keys.
+- Added compact proof artifacts and proof summaries to reviewer artifacts.
+- Added `experiments/codex-staged-proof-gate-martian-smoke-v0.toml`.
+- Added focused fake-mode tests for proof suppression and duplicate-root-cause suppression.
+
+Implementation correction:
+
+- The first v7 smoke showed the right precision trend but still let two duplicate `OptimizedImage.downsize` claims through.
+- Root-cause keys over-weighted candidate path and under-weighted the shared symbol/failure.
+- Fixed the key to prefer anchors such as `OptimizedImage.downsize` plus normalized failure signatures such as `argument/raise`.
+- Reran proof-v7 live while replaying unchanged baselines from cache.
+
+Commands:
+
+```sh
+./sugary experiment run \
+  experiments/codex-staged-proof-gate-martian-smoke-v0.toml \
+  --replay-mode refresh
+
+./sugary experiment run \
+  experiments/codex-staged-proof-gate-martian-smoke-v0.toml \
+  --replay-mode cache-first
+```
+
+Run artifacts:
+
+```text
+.sugary/research/runs/20260607T155455Z-codex-staged-proof-gate-martian-smoke-v0
+.sugary/research/runs/20260607T161216Z-codex-staged-proof-gate-martian-smoke-v0
+```
+
+Final fixed run:
+
+| Method | F1 | Recall | Precision | Usefulness | SNR | Hits | Noise | Published | Avg comments | Latency ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-low-no-tools` | 0.267 | 0.222 | 0.333 | 0.333 | 0.500 | 2 | 4 | 6 | 2.000 | 62,692 |
+| `codex-gpt-5.5-low-staged-validated` | 0.333 | 0.333 | 0.333 | 0.333 | 0.500 | 3 | 6 | 9 | 3.000 | 332,288 |
+| `codex-gpt-5.5-low-staged-proof-v7` | 0.429 | 0.333 | 0.600 | 0.600 | 1.500 | 3 | 2 | 5 | 1.667 | 345,289 |
+
+Proof-gate aggregate:
+
+| Metric | Value |
+| --- | ---: |
+| Validator-validated claims | 11 |
+| Proof-published claims | 5 |
+| Duplicate-root-cause suppressions | 1 |
+| Claims with cited read/grep evidence | 12 |
+| Proof suppressions: low score | 4 |
+| Proof suppressions: speculative language | 5 |
+| Proof suppressions: missing expected failure | 3 |
+| Proof suppressions: validator not validated | 1 |
+| Validation latency inside staged wrapper | 173,497 ms |
+
+Smoke target result:
+
+| Target | Result |
+| --- | --- |
+| `staged-proof F1 >= no-tools baseline` | pass: 0.429 vs 0.267 |
+| `staged-proof precision >= no-tools baseline` | pass: 0.600 vs 0.333 |
+| `staged-proof noise <= no-tools baseline` | pass: 2 vs 4 |
+| `staged-proof published <= no-tools baseline` | pass: 5 vs 6 |
+| `at least one staged-only true positive survives proof gate` | pass |
+| `latency < 2x no-tools baseline` | fail: 345,289 ms vs 62,692 ms |
+
+Decision:
+
+```text
+Promote PCRS v7 proof gate as the next research candidate.
+Do not treat it as product-ready because latency is still unacceptable.
+```
+
+Interpretation:
+
+- The proof gate did what the previous staged run needed: it kept the staged recall gain while cutting noise from 6 to 2 and published comments from 9 to 5.
+- The strongest evidence is not candidate breadth. It is that proof/refutation/publishing improved precision, usefulness, and SNR without losing staged-v0 recall on this smoke.
+- The duplicate-root-cause gate is now observable in artifacts and suppressed one repeated migration claim.
+- The remaining false positives are still plausible-but-unmatched claims:
+  - raw SQL interpolation in an embeddable-host migration
+  - nil `TopicUser` row in unsubscribe
+- The remaining product blocker is latency: about 5.5 minutes for 3 cases. This is research-only until candidate/validation calls are parallelized, reduced, cached more aggressively, or replaced with cheaper deterministic evidence passes.
+
+Next research implication:
+
+- Keep candidate breadth frozen.
+- Run a larger Martian subset with v7 against the current no-key PCRS publisher and no-tool Codex baseline.
+- Add a validator calibration report that distinguishes:
+  - true positive
+  - benchmark-unmatched but plausible
+  - duplicate
+  - speculative
+  - contradicted by bounded evidence
+- Test latency reduction separately from quality:
+  - parallel candidate roles
+  - parallel validations
+  - fewer max validations
+  - deterministic prefilters before validator calls

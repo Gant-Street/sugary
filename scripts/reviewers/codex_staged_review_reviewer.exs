@@ -68,8 +68,9 @@ defmodule SugaryCodexStagedReviewReviewer do
       max_candidates_per_role:
         int_env("SUGARY_STAGED_MAX_CANDIDATES_PER_ROLE", @default_max_candidates_per_role),
       max_validations: int_env("SUGARY_STAGED_MAX_VALIDATIONS", @default_max_validations),
-      min_validation_confidence:
-        float_env("SUGARY_STAGED_MIN_VALIDATION_CONFIDENCE", 0.72),
+      min_validation_confidence: float_env("SUGARY_STAGED_MIN_VALIDATION_CONFIDENCE", 0.72),
+      proof_gate?: System.get_env("SUGARY_STAGED_PROOF_GATE") in ["1", "true", "TRUE"],
+      min_proof_score: float_env("SUGARY_STAGED_MIN_PROOF_SCORE", 0.72),
       inner_timeout_ms: int_env("SUGARY_CODEX_INNER_TIMEOUT_MS", @default_timeout_ms),
       codex: System.get_env("SUGARY_CODEX_BIN") || "codex",
       cwd: System.get_env("SUGARY_CODEX_CWD") || ".",
@@ -130,22 +131,24 @@ defmodule SugaryCodexStagedReviewReviewer do
         %{candidate: candidate, evidence: evidence, validation: validation}
       end)
 
-    validated =
+    proof_stage =
       validation_stage
-      |> Enum.filter(fn row ->
-        row.validation.verdict == "validated" and
-          row.validation.confidence >= config.min_validation_confidence
-      end)
-      |> dedupe_validated_rows()
-      |> Enum.sort_by(fn row -> validation_rank(row.validation, row.candidate) end, :desc)
+      |> Enum.map(&Map.put(&1, :proof, proof_decision(&1, config)))
+
+    post_dedupe_stage = suppress_duplicate_root_causes(proof_stage)
+
+    validated =
+      post_dedupe_stage
+      |> Enum.filter(&publishable_proof?/1)
+      |> Enum.sort_by(&proof_publish_score/1, :desc)
       |> Enum.take(config.max_claims)
 
     %{
       candidates: candidate_stage.candidates,
       candidate_calls: candidate_stage.calls,
-      validation_stage: validation_stage,
+      validation_stage: post_dedupe_stage,
       validated: validated,
-      errors: candidate_stage.errors ++ validation_errors(validation_stage)
+      errors: candidate_stage.errors ++ validation_errors(post_dedupe_stage)
     }
   end
 
@@ -204,32 +207,44 @@ defmodule SugaryCodexStagedReviewReviewer do
   end
 
   defp fake_candidate_response(bundle, role) do
-    path =
-      bundle
-      |> changed_files()
-      |> List.first("unknown")
+    paths = changed_files(bundle)
+    path = List.first(paths, "unknown")
+    duplicate? = System.get_env("SUGARY_STAGED_FAKE_DUPLICATE") in ["1", "true", "TRUE"]
 
     candidates =
-      if role.id == "diff-bug" do
-        [
-          %{
-            "claim" => "Fake staged candidate needs validation",
-            "category" => "bug",
-            "severity" => "medium",
-            "confidence" => 0.78,
-            "path" => path,
-            "start_line" => 1,
-            "end_line" => 20,
-            "introduced_by_pr" => true,
-            "evidence_summary" => "Fake candidate emitted for staged wrapper testing.",
-            "reason_flagged" => "Fake candidate.",
-            "failure_path" => ["fake candidate"],
-            "suggested_fix" => "Fix the fake issue.",
-            "suggested_test" => "Add a fake regression test."
-          }
-        ]
-      else
-        []
+      cond do
+        duplicate? and role.id == "diff-bug" ->
+          [fake_duplicate_candidate(path, "FakeApi.call raises for the new caller")]
+
+        duplicate? and role.id == "contract-regression" ->
+          [
+            fake_duplicate_candidate(
+              Enum.at(paths, 1, path),
+              "The changed contract still lets `FakeApi.call` raise at runtime"
+            )
+          ]
+
+        role.id == "diff-bug" ->
+          [
+            %{
+              "claim" => "Fake staged candidate needs validation",
+              "category" => "bug",
+              "severity" => "medium",
+              "confidence" => 0.78,
+              "path" => path,
+              "start_line" => 1,
+              "end_line" => 20,
+              "introduced_by_pr" => true,
+              "evidence_summary" => "Fake candidate emitted for staged wrapper testing.",
+              "reason_flagged" => "Fake candidate.",
+              "failure_path" => ["fake candidate"],
+              "suggested_fix" => "Fix the fake issue.",
+              "suggested_test" => "Add a fake regression test."
+            }
+          ]
+
+        true ->
+          []
       end
 
     %{
@@ -244,6 +259,27 @@ defmodule SugaryCodexStagedReviewReviewer do
     }
   end
 
+  defp fake_duplicate_candidate(path, claim) do
+    %{
+      "claim" => claim,
+      "category" => "bug",
+      "severity" => "medium",
+      "confidence" => 0.86,
+      "path" => path,
+      "start_line" => 1,
+      "end_line" => 20,
+      "introduced_by_pr" => true,
+      "evidence_summary" => "Fake candidate says `FakeApi.call` is the root cause.",
+      "reason_flagged" => "Duplicate fake root cause.",
+      "failure_path" => [
+        "New code calls `FakeApi.call`",
+        "`FakeApi.call` raises at runtime for the changed input"
+      ],
+      "suggested_fix" => "Guard or normalize the changed input before calling `FakeApi.call`.",
+      "suggested_test" => "Add a regression test showing `FakeApi.call` no longer raises."
+    }
+  end
+
   defp fake_validation_response(candidate, evidence) do
     read_ok? =
       Enum.any?(evidence, fn observation ->
@@ -253,7 +289,7 @@ defmodule SugaryCodexStagedReviewReviewer do
     %{
       verdict: if(read_ok?, do: "validated", else: "uncertain"),
       confidence: if(read_ok?, do: 0.82, else: 0.2),
-      evidence_summary: "Fake validator inspected bounded repo evidence.",
+      evidence_summary: "Fake validator inspected bounded repo evidence from the changed code.",
       counterargument: "",
       failure_path: Map.get(candidate, "failure_path", []),
       suggested_fix: Map.get(candidate, "suggested_fix", ""),
@@ -559,7 +595,12 @@ defmodule SugaryCodexStagedReviewReviewer do
 
     read_observation =
       if path != "unknown" do
-        run_tool(bundle, "read_file", %{path: path, start_line: max(line - 30, 1), end_line: line + 90}, 2)
+        run_tool(
+          bundle,
+          "read_file",
+          %{path: path, start_line: max(line - 30, 1), end_line: line + 90},
+          2
+        )
       end
 
     grep_observation =
@@ -574,11 +615,12 @@ defmodule SugaryCodexStagedReviewReviewer do
   end
 
   defp grep_query(candidate) do
-    text = [
-      Map.get(candidate, "claim", ""),
-      Map.get(candidate, "evidence_summary", "")
-    ]
-    |> Enum.join(" ")
+    text =
+      [
+        Map.get(candidate, "claim", ""),
+        Map.get(candidate, "evidence_summary", "")
+      ]
+      |> Enum.join(" ")
 
     Regex.scan(~r/`([^`]{3,80})`/, text)
     |> Enum.map(fn [_match, value] -> String.trim(value) end)
@@ -608,7 +650,8 @@ defmodule SugaryCodexStagedReviewReviewer do
 
   defp repo_grep_tool(bundle, args) do
     with {:workspace, head} when is_binary(head) <- {:workspace, workspace_head(bundle)},
-         {:query, query} <- {:query, valid_grep_query(Map.get(args, "query") || Map.get(args, :query))} do
+         {:query, query} <-
+           {:query, valid_grep_query(Map.get(args, "query") || Map.get(args, :query))} do
       request = %{
         command: "rg",
         args: [
@@ -678,9 +721,13 @@ defmodule SugaryCodexStagedReviewReviewer do
 
   defp read_file_tool(bundle, args) do
     with {:workspace, head} when is_binary(head) <- {:workspace, workspace_head(bundle)},
-         {:path, {:ok, path}} <- {:path, safe_relative_path(Map.get(args, "path") || Map.get(args, :path))} do
+         {:path, {:ok, path}} <-
+           {:path, safe_relative_path(Map.get(args, "path") || Map.get(args, :path))} do
       start_line = positive_int(Map.get(args, "start_line") || Map.get(args, :start_line), 1)
-      requested_end = positive_int(Map.get(args, "end_line") || Map.get(args, :end_line), start_line + 80)
+
+      requested_end =
+        positive_int(Map.get(args, "end_line") || Map.get(args, :end_line), start_line + 80)
+
       end_line = min(max(requested_end, start_line), start_line + 119)
       full_path = Path.expand(path, head)
       root = Path.expand(head)
@@ -697,7 +744,9 @@ defmodule SugaryCodexStagedReviewReviewer do
             full_path
             |> File.stream!()
             |> Stream.with_index(1)
-            |> Stream.filter(fn {_line, number} -> number >= start_line and number <= end_line end)
+            |> Stream.filter(fn {_line, number} ->
+              number >= start_line and number <= end_line
+            end)
             |> Enum.map(fn {line, number} -> "#{number}: #{String.trim_trailing(line)}" end)
 
           %{
@@ -726,8 +775,11 @@ defmodule SugaryCodexStagedReviewReviewer do
       File.write!(request_path, encode(request))
 
       case System.cmd("python3", ["scripts/command_process_runner.py", request_path]) do
-        {stdout, 0} -> :json.decode(stdout)
-        {stdout, status} -> %{"stdout" => stdout, "stderr" => "tool runner failed", "exit_status" => status}
+        {stdout, 0} ->
+          :json.decode(stdout)
+
+        {stdout, status} ->
+          %{"stdout" => stdout, "stderr" => "tool runner failed", "exit_status" => status}
       end
     rescue
       error ->
@@ -775,40 +827,17 @@ defmodule SugaryCodexStagedReviewReviewer do
     validation_stage
     |> Enum.flat_map(fn row ->
       if row.validation.error do
-        [%{reason: row.validation.error, phase: "validator", claim: Map.get(row.candidate, "claim", "")}]
+        [
+          %{
+            reason: row.validation.error,
+            phase: "validator",
+            claim: Map.get(row.candidate, "claim", "")
+          }
+        ]
       else
         []
       end
     end)
-  end
-
-  defp dedupe_validated_rows(rows) do
-    rows
-    |> Enum.reduce([], fn row, acc ->
-      case Enum.find_index(acc, &duplicate_validated_row?(row, &1)) do
-        nil ->
-          [row | acc]
-
-        index ->
-          existing = Enum.at(acc, index)
-
-          if validation_rank(row.validation, row.candidate) >
-               validation_rank(existing.validation, existing.candidate) do
-            List.replace_at(acc, index, row)
-          else
-            acc
-          end
-      end
-    end)
-    |> Enum.reverse()
-  end
-
-  defp duplicate_validated_row?(left, right) do
-    left_path = normalize_path(Map.get(left.candidate, "path", "unknown"))
-    right_path = normalize_path(Map.get(right.candidate, "path", "unknown"))
-
-    left_path != "unknown" and left_path == right_path and
-      token_jaccard(validated_row_text(left), validated_row_text(right)) >= 0.35
   end
 
   defp validated_row_text(row) do
@@ -820,19 +849,6 @@ defmodule SugaryCodexStagedReviewReviewer do
     ]
     |> List.flatten()
     |> Enum.join(" ")
-  end
-
-  defp token_jaccard(left, right) do
-    left = token_set(left)
-    right = token_set(right)
-
-    if MapSet.size(left) == 0 or MapSet.size(right) == 0 do
-      0.0
-    else
-      intersection = left |> MapSet.intersection(right) |> MapSet.size()
-      union = left |> MapSet.union(right) |> MapSet.size()
-      intersection / union
-    end
   end
 
   defp token_set(text) do
@@ -850,6 +866,353 @@ defmodule SugaryCodexStagedReviewReviewer do
     |> MapSet.new()
   end
 
+  defp proof_decision(row, %{proof_gate?: false}) do
+    %{
+      decision: if(row.validation.verdict == "validated", do: "publish", else: "suppress"),
+      publish_score: validation_rank(row.validation, row.candidate),
+      reasons:
+        if(row.validation.verdict == "validated",
+          do: [],
+          else: ["validator_#{row.validation.verdict}"]
+        ),
+      features: proof_features(row)
+    }
+  end
+
+  defp proof_decision(row, config) do
+    features = proof_features(row)
+    score = proof_score(row, features)
+    reasons = proof_suppression_reasons(row, features, score, config)
+
+    %{
+      decision: if(reasons == [], do: "publish", else: "suppress"),
+      publish_score: score,
+      reasons: reasons,
+      features: features
+    }
+  end
+
+  defp proof_features(row) do
+    text = validated_row_text(row)
+    evidence_text = row.validation.evidence_summary |> to_string()
+
+    repo_observations = Enum.filter(row.evidence, &(&1.tool in ["read_file", "repo_grep"]))
+    useful_observations = Enum.filter(repo_observations, &useful_observation?/1)
+
+    failure_path =
+      List.wrap(row.validation.failure_path || Map.get(row.candidate, "failure_path", []))
+
+    %{
+      validator_validated: row.validation.verdict == "validated",
+      validation_confidence: clamp_float(row.validation.confidence),
+      introduced_by_pr: Map.get(row.candidate, "introduced_by_pr", true) == true,
+      has_repo_evidence: useful_observations != [],
+      repo_observation_count: length(useful_observations),
+      has_read_file: Enum.any?(useful_observations, &(&1.tool == "read_file")),
+      has_repo_grep: Enum.any?(useful_observations, &(&1.tool == "repo_grep")),
+      has_failure_path: length(failure_path) >= 2,
+      has_suggested_fix:
+        String.length(String.trim(to_string(row.validation.suggested_fix))) >= 12,
+      has_suggested_test:
+        String.length(String.trim(to_string(row.validation.suggested_test))) >= 12,
+      evidence_mentions_changed_code: evidence_mentions_changed_code?(evidence_text),
+      expected_failure_language: expected_failure_language?(text),
+      speculative_language: speculative_language?(text),
+      counterargument_strength: counterargument_strength(row.validation.counterargument),
+      root_cause_key: root_cause_key(row),
+      claim_tokens: token_set(text) |> MapSet.size()
+    }
+  end
+
+  defp useful_observation?(%{ok: false}), do: false
+
+  defp useful_observation?(%{tool: "read_file", result: result}) do
+    result |> Map.get(:content, "") |> to_string() |> String.length() > 40
+  end
+
+  defp useful_observation?(%{tool: "repo_grep", result: result}) do
+    (Map.get(result, :count) || 0) > 0
+  end
+
+  defp useful_observation?(_observation), do: false
+
+  defp proof_suppression_reasons(_row, features, score, config) do
+    []
+    |> maybe_reason(not features.validator_validated, "validator_not_validated")
+    |> maybe_reason(
+      features.validation_confidence < config.min_validation_confidence,
+      "low_validation_confidence"
+    )
+    |> maybe_reason(score < config.min_proof_score, "low_proof_score")
+    |> maybe_reason(not features.introduced_by_pr, "not_introduced_by_pr")
+    |> maybe_reason(not features.has_repo_evidence, "missing_repo_evidence")
+    |> maybe_reason(not features.has_failure_path, "missing_failure_path")
+    |> maybe_reason(
+      not features.evidence_mentions_changed_code,
+      "missing_introducedness_evidence"
+    )
+    |> maybe_reason(not features.expected_failure_language, "missing_expected_failure")
+    |> maybe_reason(features.speculative_language, "speculative_language")
+    |> maybe_reason(features.counterargument_strength == "strong", "strong_counterargument")
+  end
+
+  defp maybe_reason(reasons, true, reason), do: [reason | reasons]
+  defp maybe_reason(reasons, false, _reason), do: reasons
+
+  defp proof_score(row, features) do
+    severity =
+      severity_weight(row.validation.severity || Map.get(row.candidate, "severity", "medium")) / 4
+
+    base =
+      0.36 * features.validation_confidence +
+        0.16 * severity +
+        0.12 * bool_score(features.has_repo_evidence) +
+        0.10 * bool_score(features.has_failure_path) +
+        0.10 * bool_score(features.evidence_mentions_changed_code) +
+        0.08 * bool_score(features.expected_failure_language) +
+        0.04 * bool_score(features.has_suggested_fix) +
+        0.04 * bool_score(features.has_suggested_test)
+
+    penalty =
+      0.18 * bool_score(features.speculative_language) +
+        case features.counterargument_strength do
+          "strong" -> 0.2
+          "medium" -> 0.08
+          _ -> 0.0
+        end
+
+    max(base - penalty, 0.0)
+  end
+
+  defp bool_score(true), do: 1.0
+  defp bool_score(false), do: 0.0
+
+  defp publishable_proof?(row) do
+    row.proof.decision == "publish"
+  end
+
+  defp proof_publish_score(row), do: row.proof.publish_score
+
+  defp suppress_duplicate_root_causes(rows) do
+    rows
+    |> Enum.sort_by(&proof_publish_score/1, :desc)
+    |> Enum.reduce(%{kept: [], seen: MapSet.new()}, fn row, acc ->
+      key = row.proof.features.root_cause_key
+
+      cond do
+        key in [nil, ""] ->
+          %{acc | kept: acc.kept ++ [row]}
+
+        MapSet.member?(acc.seen, key) ->
+          duplicate =
+            put_in(row.proof.decision, "suppress")
+            |> put_in([:proof, :reasons], ["duplicate_root_cause" | row.proof.reasons])
+
+          %{acc | kept: acc.kept ++ [duplicate]}
+
+        true ->
+          %{acc | kept: acc.kept ++ [row], seen: MapSet.put(acc.seen, key)}
+      end
+    end)
+    |> Map.fetch!(:kept)
+  end
+
+  defp root_cause_key(row) do
+    path = normalize_path(Map.get(row.candidate, "path", "unknown"))
+    text = validated_row_text(row)
+    anchors = root_cause_anchors(text)
+    tokens = token_set(validated_row_text(row))
+
+    root_tokens =
+      tokens
+      |> Enum.filter(&root_cause_token?/1)
+      |> Enum.sort()
+      |> Enum.take(5)
+
+    failure_tokens =
+      tokens
+      |> Enum.filter(&failure_signature_token?/1)
+      |> Enum.map(&canonical_failure_signature_token/1)
+      |> Enum.uniq()
+      |> Enum.sort()
+      |> Enum.take(4)
+
+    cond do
+      anchors != [] ->
+        signature =
+          if failure_tokens == [] do
+            "general"
+          else
+            Enum.join(failure_tokens, "-")
+          end
+
+        "symbol:#{Enum.take(anchors, 2) |> Enum.join("+")}:#{signature}"
+
+      path != "unknown" and root_tokens != [] ->
+        "#{path}:#{Enum.join(root_tokens, "-")}"
+
+      true ->
+        nil
+    end
+  end
+
+  defp root_cause_anchors(text) do
+    backtick_anchors =
+      Regex.scan(~r/`([^`]+)`/, to_string(text))
+      |> Enum.map(fn [_match, value] -> value end)
+      |> Enum.flat_map(&identifier_anchors/1)
+
+    inline_anchors =
+      Regex.scan(~r/\b[A-Z][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_!?]*)+\b/, to_string(text))
+      |> Enum.map(fn [value] -> canonical_symbol(value) end)
+
+    (backtick_anchors ++ inline_anchors)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
+  defp identifier_anchors(text) do
+    Regex.scan(~r/[A-Za-z_][A-Za-z0-9_!?]*(?:\.[A-Za-z_][A-Za-z0-9_!?]*)+/, text)
+    |> Enum.map(fn [value] -> canonical_symbol(value) end)
+  end
+
+  defp canonical_symbol(value) do
+    value
+    |> to_string()
+    |> String.downcase()
+    |> String.replace(~r/[?!]/, "")
+    |> String.trim(".")
+  end
+
+  defp root_cause_token?(token) do
+    String.length(token) >= 5 and
+      not Regex.match?(~r/^\d+$/, token) and
+      token not in ~w(
+        validation evidence bounded candidate change changed introduced existing issue
+        claim defect method return returns line lines file
+      )
+  end
+
+  defp failure_signature_token?(token) do
+    token in ~w(
+      arity argument arguments argumenterror auth authorization bypass crash crashes
+      csrf dereference dereferences exception fail fails failure injection invalid leak
+      nil null overflow panic raise raises regression runtime unsafe unauthorized
+    )
+  end
+
+  defp canonical_failure_signature_token(token)
+       when token in ["raises", "raised"],
+       do: "raise"
+
+  defp canonical_failure_signature_token(token)
+       when token in ["crashes", "crashed"],
+       do: "crash"
+
+  defp canonical_failure_signature_token(token)
+       when token in ["fails", "failed", "failure"],
+       do: "fail"
+
+  defp canonical_failure_signature_token(token)
+       when token in ["arguments"],
+       do: "argument"
+
+  defp canonical_failure_signature_token(token)
+       when token in ["dereferences"],
+       do: "dereference"
+
+  defp canonical_failure_signature_token(token), do: token
+
+  defp evidence_mentions_changed_code?(text) do
+    text = String.downcase(to_string(text))
+
+    Enum.any?(
+      [
+        "diff",
+        "pr adds",
+        "pr changes",
+        "the pr",
+        "new code",
+        "now ",
+        "replaces",
+        "changed",
+        "newly"
+      ],
+      &String.contains?(text, &1)
+    )
+  end
+
+  defp expected_failure_language?(text) do
+    text = String.downcase(to_string(text))
+
+    Enum.any?(
+      [
+        "crash",
+        "raises",
+        "raise",
+        "throws",
+        "fails",
+        "reject",
+        "break",
+        "regress",
+        "bypass",
+        "leak",
+        "incorrect",
+        "cannot",
+        "no longer",
+        "will not",
+        "500",
+        "exception"
+      ],
+      &String.contains?(text, &1)
+    )
+  end
+
+  defp speculative_language?(text) do
+    text = String.downcase(to_string(text))
+
+    Enum.any?(
+      [
+        "can crash",
+        "could crash",
+        "might",
+        "may ",
+        "possibly",
+        "potentially",
+        "plausible",
+        "if a user",
+        "if an attacker",
+        "if the"
+      ],
+      &String.contains?(text, &1)
+    )
+  end
+
+  defp counterargument_strength(text) do
+    text = String.downcase(to_string(text))
+
+    cond do
+      text == "" ->
+        "none"
+
+      Enum.any?(
+        ["does not refute", "not refute", "still", "however"],
+        &String.contains?(text, &1)
+      ) ->
+        "weak"
+
+      Enum.any?(["would not", "cannot", "depends on", "if"], &String.contains?(text, &1)) ->
+        "medium"
+
+      String.length(text) > 180 ->
+        "medium"
+
+      true ->
+        "weak"
+    end
+  end
+
   defp normalize_validated_claims(rows, config) do
     rows
     |> Enum.with_index(1)
@@ -864,7 +1227,8 @@ defmodule SugaryCodexStagedReviewReviewer do
         id: "#{config.method_id}-claim-#{index}",
         claim: summary,
         category: category,
-        severity: validation.severity || normalize_severity(Map.get(candidate, "severity", "medium")),
+        severity:
+          validation.severity || normalize_severity(Map.get(candidate, "severity", "medium")),
         confidence: clamp_float(validation.confidence),
         path: path,
         start_line: Map.get(candidate, "start_line"),
@@ -875,7 +1239,8 @@ defmodule SugaryCodexStagedReviewReviewer do
             type: "staged_validation",
             tier: 3,
             strength: "strong",
-            summary: validation.evidence_summary || Map.get(candidate, "evidence_summary", summary)
+            summary:
+              validation.evidence_summary || Map.get(candidate, "evidence_summary", summary)
           }
         ],
         failure_path: validation.failure_path || Map.get(candidate, "failure_path", []),
@@ -887,6 +1252,10 @@ defmodule SugaryCodexStagedReviewReviewer do
           method: config.method_id,
           tool: "codex_staged_review",
           model: config.model,
+          proof_gate: config.proof_gate?,
+          proof_score: row.proof.publish_score,
+          proof_reasons: row.proof.reasons,
+          proof_features: row.proof.features,
           candidate_role: Map.get(candidate, "source_role"),
           validator_verdict: validation.verdict,
           validator_confidence: validation.confidence,
@@ -952,10 +1321,17 @@ defmodule SugaryCodexStagedReviewReviewer do
     path = path |> to_string() |> String.trim() |> String.replace("\\", "/")
 
     cond do
-      path == "" -> {:error, "missing_path"}
-      String.starts_with?(path, "/") -> {:error, "absolute_path_forbidden"}
-      path |> String.split("/") |> Enum.any?(&(&1 == "..")) -> {:error, "path_traversal_forbidden"}
-      true -> {:ok, path}
+      path == "" ->
+        {:error, "missing_path"}
+
+      String.starts_with?(path, "/") ->
+        {:error, "absolute_path_forbidden"}
+
+      path |> String.split("/") |> Enum.any?(&(&1 == "..")) ->
+        {:error, "path_traversal_forbidden"}
+
+      true ->
+        {:ok, path}
     end
   end
 
@@ -1025,7 +1401,11 @@ defmodule SugaryCodexStagedReviewReviewer do
     if byte_size(encoded) <= max_bytes do
       value
     else
-      %{ok: Map.get(value, :ok, false), truncated: true, preview: String.slice(encoded, 0, max_bytes)}
+      %{
+        ok: Map.get(value, :ok, false),
+        truncated: true,
+        preview: String.slice(encoded, 0, max_bytes)
+      }
     end
   end
 
@@ -1057,9 +1437,12 @@ defmodule SugaryCodexStagedReviewReviewer do
       error: response.error,
       summary: Map.get(response, :summary, ""),
       candidates: length(Map.get(response, :candidates, [])),
-      raw_stdout_preview: response |> Map.get(:raw_stdout, "") |> to_string() |> String.slice(0, 1500),
-      raw_stderr_preview: response |> Map.get(:raw_stderr, "") |> to_string() |> String.slice(0, 1500),
-      output_preview: response |> Map.get(:output_text, "") |> to_string() |> String.slice(0, 2500)
+      raw_stdout_preview:
+        response |> Map.get(:raw_stdout, "") |> to_string() |> String.slice(0, 1500),
+      raw_stderr_preview:
+        response |> Map.get(:raw_stderr, "") |> to_string() |> String.slice(0, 1500),
+      output_preview:
+        response |> Map.get(:output_text, "") |> to_string() |> String.slice(0, 2500)
     }
   end
 
@@ -1075,9 +1458,52 @@ defmodule SugaryCodexStagedReviewReviewer do
       candidate_count: length(state.candidates),
       validation_count: length(state.validation_stage),
       validated_count: length(state.validated),
+      proof_gate: config.proof_gate?,
+      proof_summary: proof_summary(state.validation_stage),
       candidate_calls: state.candidate_calls,
       validation_stage: compact_validation_stage(state.validation_stage)
     }
+  end
+
+  defp proof_summary(rows) do
+    rows
+    |> Enum.reduce(
+      %{
+        validator_validated: 0,
+        proof_published: 0,
+        suppressions: %{},
+        duplicate_root_cause: 0,
+        cited_tool_observation_claims: 0,
+        validation_latency_ms: 0
+      },
+      fn row, acc ->
+        validator_validated = if row.validation.verdict == "validated", do: 1, else: 0
+        proof_published = if row.proof.decision == "publish", do: 1, else: 0
+
+        cited =
+          if Enum.any?(row.evidence, &(&1.tool in ["read_file", "repo_grep"] and &1.ok)),
+            do: 1,
+            else: 0
+
+        suppressions =
+          row.proof.reasons
+          |> Enum.reduce(acc.suppressions, fn reason, counts ->
+            Map.update(counts, reason, 1, &(&1 + 1))
+          end)
+
+        %{
+          acc
+          | validator_validated: acc.validator_validated + validator_validated,
+            proof_published: acc.proof_published + proof_published,
+            suppressions: suppressions,
+            duplicate_root_cause:
+              acc.duplicate_root_cause +
+                if("duplicate_root_cause" in row.proof.reasons, do: 1, else: 0),
+            cited_tool_observation_claims: acc.cited_tool_observation_claims + cited,
+            validation_latency_ms: acc.validation_latency_ms + (row.validation.duration_ms || 0)
+        }
+      end
+    )
   end
 
   defp compact_validation_stage(rows) do
@@ -1086,9 +1512,14 @@ defmodule SugaryCodexStagedReviewReviewer do
         claim: Map.get(row.candidate, "claim", "") |> String.slice(0, 500),
         path: Map.get(row.candidate, "path"),
         source_role: Map.get(row.candidate, "source_role"),
-        evidence_tools: Enum.map(row.evidence, &%{id: &1.observation_id, tool: &1.tool, ok: &1.ok}),
+        evidence_tools:
+          Enum.map(row.evidence, &%{id: &1.observation_id, tool: &1.tool, ok: &1.ok}),
         verdict: row.validation.verdict,
         confidence: row.validation.confidence,
+        proof_decision: row.proof.decision,
+        proof_score: row.proof.publish_score,
+        proof_reasons: row.proof.reasons,
+        proof_features: row.proof.features,
         evidence_summary: row.validation.evidence_summary |> to_string() |> String.slice(0, 1000),
         counterargument: row.validation.counterargument |> to_string() |> String.slice(0, 1000),
         error: row.validation.error,

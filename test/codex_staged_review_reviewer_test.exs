@@ -115,6 +115,89 @@ defmodule Sugary.CodexStagedReviewReviewerTest do
     assert artifact["validation_stage"] |> hd() |> Map.get("verdict") == "uncertain"
   end
 
+  test "proof gate suppresses fake claim without expected failure evidence" do
+    workspace = tmp_dir("staged-proof-workspace")
+
+    on_exit(fn -> File.rm_rf(workspace) end)
+
+    File.mkdir_p!(Path.join(workspace, "src"))
+    File.write!(Path.join(workspace, "src/reviewer.ts"), "export const value = 1;\n")
+
+    input =
+      ReviewInputBundle.new(%{
+        case_id: "blind-case",
+        suite: "blind",
+        pr: %{title: "Reviewer change", body: ""},
+        diff: "diff --git a/src/reviewer.ts b/src/reviewer.ts\n+export const value = 1;\n",
+        context: %{changed_files: [%{path: "src/reviewer.ts"}]},
+        method: %{id: "staged-wrapper-test"},
+        metadata: %{workspace: %{head: workspace, base: workspace}}
+      })
+
+    result = run_reviewer(input, %{"SUGARY_STAGED_PROOF_GATE" => "1"})
+    [artifact] = result["artifacts"]
+    [validation] = artifact["validation_stage"]
+
+    assert result["claims"] == []
+    assert artifact["proof_gate"] == true
+    assert validation["proof_decision"] == "suppress"
+    assert "missing_expected_failure" in validation["proof_reasons"]
+  end
+
+  test "proof gate suppresses duplicate root cause claims across paths" do
+    workspace = tmp_dir("staged-proof-duplicate-workspace")
+
+    on_exit(fn -> File.rm_rf(workspace) end)
+
+    File.mkdir_p!(Path.join(workspace, "src"))
+
+    File.write!(
+      Path.join(workspace, "src/caller.ts"),
+      "export function caller(value) {\n  return FakeApi.call(value);\n}\n"
+    )
+
+    File.write!(
+      Path.join(workspace, "src/contract.ts"),
+      "export function normalize(value) {\n  return value;\n}\n"
+    )
+
+    input =
+      ReviewInputBundle.new(%{
+        case_id: "blind-case",
+        suite: "blind",
+        pr: %{title: "Reviewer change", body: ""},
+        diff: """
+        diff --git a/src/caller.ts b/src/caller.ts
+        +  return FakeApi.call(value);
+        diff --git a/src/contract.ts b/src/contract.ts
+        +export function normalize(value) { return value; }
+        """,
+        context: %{changed_files: [%{path: "src/caller.ts"}, %{path: "src/contract.ts"}]},
+        method: %{id: "staged-wrapper-test"},
+        metadata: %{workspace: %{head: workspace, base: workspace}}
+      })
+
+    result =
+      run_reviewer(input, %{
+        "SUGARY_STAGED_PROOF_GATE" => "1",
+        "SUGARY_STAGED_FAKE_DUPLICATE" => "1"
+      })
+
+    [artifact] = result["artifacts"]
+
+    assert length(result["claims"]) == 1
+    assert artifact["candidate_count"] == 2
+    assert artifact["validated_count"] == 1
+    assert artifact["proof_summary"]["duplicate_root_cause"] == 1
+    assert artifact["proof_summary"]["suppressions"]["duplicate_root_cause"] == 1
+
+    assert Enum.count(
+             artifact["validation_stage"],
+             &(&1["proof_decision"] == "suppress" and
+                 "duplicate_root_cause" in &1["proof_reasons"])
+           ) == 1
+  end
+
   defp tmp_dir(name) do
     Path.join(System.tmp_dir!(), "sugary-#{name}-#{System.unique_integer([:positive])}")
   end
