@@ -2234,3 +2234,113 @@ Next research implication:
   - parallel validations
   - fewer max validations
   - deterministic prefilters before validator calls
+
+## 2026-06-07: PCRS v8 Typed Proof Gates + Repo Invariant Ledger
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: mixed negative; typed gate improved v7 noise but did not beat no-tool baseline
+suite: Martian offline local smoke, cases 1-3
+official benchmark score: not claimed
+model: Codex CLI, gpt-5.5 low
+```
+
+Question:
+
+```text
+Can the v7 proof gate improve precision by assigning typed proof obligations
+to claims and checking them against a small repo-invariant ledger, without
+adding more candidate agents, shell execution, h5i memory, or passive context?
+```
+
+What changed:
+
+- Added `SUGARY_STAGED_TYPED_PROOF_GATES=1` to the staged Codex wrapper.
+- Added `SUGARY_STAGED_INVARIANT_LEDGER` support for JSON repo invariants.
+- Added typed proof families:
+  - `api_contract`
+  - `upload_limit_contract`
+  - `security_injection`
+  - `resource_exhaustion`
+  - `runtime_nil`
+  - `state_precondition`
+- Added support and suppression invariant matching.
+- Added per-claim typed proof features to artifacts:
+  - proof type
+  - matched invariants
+  - suppressing invariants
+  - typed suppression reasons
+- Added `invariants/pcrs-v8-discourse-invariants-v0.json`.
+- Added `experiments/codex-staged-typed-proof-gate-martian-smoke-v0.toml`.
+- Added focused tests for:
+  - invariant-supported upload-limit claims surviving speculation wording
+  - SQL injection claims being suppressed without controllable-input proof
+  - `TopicUser` nil claims being suppressed without absence-path proof
+
+Important correction:
+
+- The first v8 run was a controlled negative:
+  - v7: F1 0.533, precision 0.667, hits 4, noise 2
+  - v8: F1 0.400, precision 0.500, hits 3, noise 3
+- The ledger was too broad. It accidentally helped resource-exhaustion and `TopicUser` nil claims survive as if they were supported contract claims.
+- Tightened proof-type inference and ledger terms, then forced a live refresh.
+- A cache-first rerun before refresh reused stale reviewer outputs after local code/ledger edits. This exposed an infrastructure issue: command replay cache keys are not strong enough for reviewer-implementation ablations unless they include wrapper/script and ledger content hashes.
+
+Commands:
+
+```sh
+./sugary experiment run \
+  experiments/codex-staged-typed-proof-gate-martian-smoke-v0.toml \
+  --replay-mode refresh
+```
+
+Run artifact:
+
+```text
+.sugary/research/runs/20260607T165314Z-codex-staged-typed-proof-gate-martian-smoke-v0
+```
+
+Fixed refresh result:
+
+| Method | F1 | Recall | Precision | Usefulness | SNR | Hits | Noise | Published | Avg comments | Latency ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-low-no-tools` | 0.462 | 0.333 | 0.750 | 0.750 | 3.000 | 3 | 1 | 4 | 1.333 | 42,585 |
+| `codex-gpt-5.5-low-staged-proof-v7` | 0.400 | 0.333 | 0.500 | 0.500 | 1.000 | 3 | 3 | 6 | 2.000 | 346,570 |
+| `codex-gpt-5.5-low-staged-typed-proof-v8` | 0.429 | 0.333 | 0.600 | 0.600 | 1.500 | 3 | 2 | 5 | 1.667 | 373,157 |
+
+Decision:
+
+```text
+Do not promote PCRS v8 over the current no-tool baseline.
+Keep typed proof gates and repo invariants as experimental publisher/refuter infrastructure.
+```
+
+Interpretation:
+
+- v8 improved over v7 after the correction:
+  - noise dropped from 3 to 2
+  - published comments dropped from 6 to 5
+  - precision rose from 0.500 to 0.600
+  - duplicate-hit events dropped to 0
+- v8 still did not beat the simpler no-tool Codex reviewer:
+  - no-tool F1 0.462 vs v8 F1 0.429
+  - no-tool precision/usefulness 0.750 vs v8 0.600
+  - no-tool latency 42.6s vs v8 373.2s
+- The typed invariant ledger correctly preserved the hardcoded upload-limit hit.
+- The remaining v8 noise came from plausible unsubscribe/`TopicUser` claims that still lacked a strong enough refutation boundary.
+- The useful direction is not more candidate agents. The bottleneck remains validator calibration, refutation quality, dedupe/publishing, and replay-cache validity.
+
+Next research implication:
+
+- Fix command replay cache integrity before running more expensive ablations:
+  - include reviewer wrapper/script content hashes
+  - include invariant ledger content hash
+  - include prompt/template hash where applicable
+- Add a validator/refuter calibration report that scores each validated claim against:
+  - benchmark hit
+  - duplicate
+  - speculative false positive
+  - unsupported by typed proof
+  - contradicted by repo invariant
+- Test typed gates on a larger replayed Martian slice only after cache-key integrity is fixed.
+- Do not add h5i, Jido, persistent subagents, or terminal execution as scoring variables until the proof/refutation publisher is reliably improving precision at fixed recall.

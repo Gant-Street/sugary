@@ -70,7 +70,11 @@ defmodule SugaryCodexStagedReviewReviewer do
       max_validations: int_env("SUGARY_STAGED_MAX_VALIDATIONS", @default_max_validations),
       min_validation_confidence: float_env("SUGARY_STAGED_MIN_VALIDATION_CONFIDENCE", 0.72),
       proof_gate?: System.get_env("SUGARY_STAGED_PROOF_GATE") in ["1", "true", "TRUE"],
+      typed_proof_gates?:
+        System.get_env("SUGARY_STAGED_TYPED_PROOF_GATES") in ["1", "true", "TRUE"],
       min_proof_score: float_env("SUGARY_STAGED_MIN_PROOF_SCORE", 0.72),
+      invariant_ledger:
+        System.get_env("SUGARY_STAGED_INVARIANT_LEDGER") |> load_invariant_ledger(),
       inner_timeout_ms: int_env("SUGARY_CODEX_INNER_TIMEOUT_MS", @default_timeout_ms),
       codex: System.get_env("SUGARY_CODEX_BIN") || "codex",
       cwd: System.get_env("SUGARY_CODEX_CWD") || ".",
@@ -210,9 +214,43 @@ defmodule SugaryCodexStagedReviewReviewer do
     paths = changed_files(bundle)
     path = List.first(paths, "unknown")
     duplicate? = System.get_env("SUGARY_STAGED_FAKE_DUPLICATE") in ["1", "true", "TRUE"]
+    typed_case = System.get_env("SUGARY_STAGED_FAKE_TYPED_CASE")
 
     candidates =
       cond do
+        typed_case == "upload_limit" and role.id == "diff-bug" ->
+          [
+            fake_typed_candidate(
+              path,
+              "Hard-coding 10 MB can reject uploads that the SiteSetting size limit allows.",
+              "upload_limit_contract",
+              "Fake candidate cites the repo invariant that upload limits are controlled by SiteSetting values."
+            )
+          ]
+
+        typed_case == "sql_injection" and role.id == "changed-code-security" ->
+          [
+            fake_typed_candidate(
+              path,
+              "The migration interpolates existing settings directly into SQL, so quoted values break upgrades.",
+              "security_injection",
+              "Fake candidate cites raw SQL interpolation from legacy settings."
+            )
+          ]
+
+        typed_case == "topic_user_nil" and role.id == "contract-regression" ->
+          [
+            fake_typed_candidate(
+              path,
+              "The unsubscribe action can crash when TopicUser.find_by returns nil and `tu.notification_level` is dereferenced.",
+              "runtime_nil",
+              "Fake candidate cites a nil TopicUser possibility without proving a missing row path."
+            )
+          ]
+
+        typed_case not in [nil, ""] ->
+          []
+
         duplicate? and role.id == "diff-bug" ->
           [fake_duplicate_candidate(path, "FakeApi.call raises for the new caller")]
 
@@ -277,6 +315,27 @@ defmodule SugaryCodexStagedReviewReviewer do
       ],
       "suggested_fix" => "Guard or normalize the changed input before calling `FakeApi.call`.",
       "suggested_test" => "Add a regression test showing `FakeApi.call` no longer raises."
+    }
+  end
+
+  defp fake_typed_candidate(path, claim, category, evidence_summary) do
+    %{
+      "claim" => claim,
+      "category" => category,
+      "severity" => "medium",
+      "confidence" => 0.86,
+      "path" => path,
+      "start_line" => 1,
+      "end_line" => 20,
+      "introduced_by_pr" => true,
+      "evidence_summary" => evidence_summary,
+      "reason_flagged" => "Fake typed proof candidate.",
+      "failure_path" => [
+        "New changed code creates the typed proof condition.",
+        "The repo invariant makes the behavior regress at runtime."
+      ],
+      "suggested_fix" => "Restore the repo invariant before publishing this behavior.",
+      "suggested_test" => "Add a regression test for the typed proof invariant."
     }
   end
 
@@ -866,7 +925,7 @@ defmodule SugaryCodexStagedReviewReviewer do
     |> MapSet.new()
   end
 
-  defp proof_decision(row, %{proof_gate?: false}) do
+  defp proof_decision(row, %{proof_gate?: false} = config) do
     %{
       decision: if(row.validation.verdict == "validated", do: "publish", else: "suppress"),
       publish_score: validation_rank(row.validation, row.candidate),
@@ -875,12 +934,12 @@ defmodule SugaryCodexStagedReviewReviewer do
           do: [],
           else: ["validator_#{row.validation.verdict}"]
         ),
-      features: proof_features(row)
+      features: proof_features(row, config)
     }
   end
 
   defp proof_decision(row, config) do
-    features = proof_features(row)
+    features = proof_features(row, config)
     score = proof_score(row, features)
     reasons = proof_suppression_reasons(row, features, score, config)
 
@@ -892,9 +951,11 @@ defmodule SugaryCodexStagedReviewReviewer do
     }
   end
 
-  defp proof_features(row) do
+  defp proof_features(row, config) do
     text = validated_row_text(row)
     evidence_text = row.validation.evidence_summary |> to_string()
+    proof_type = proof_type(row, text)
+    invariant_matches = invariant_matches(config.invariant_ledger.invariants, text, proof_type)
 
     repo_observations = Enum.filter(row.evidence, &(&1.tool in ["read_file", "repo_grep"]))
     useful_observations = Enum.filter(repo_observations, &useful_observation?/1)
@@ -902,7 +963,7 @@ defmodule SugaryCodexStagedReviewReviewer do
     failure_path =
       List.wrap(row.validation.failure_path || Map.get(row.candidate, "failure_path", []))
 
-    %{
+    base = %{
       validator_validated: row.validation.verdict == "validated",
       validation_confidence: clamp_float(row.validation.confidence),
       introduced_by_pr: Map.get(row.candidate, "introduced_by_pr", true) == true,
@@ -920,8 +981,15 @@ defmodule SugaryCodexStagedReviewReviewer do
       speculative_language: speculative_language?(text),
       counterargument_strength: counterargument_strength(row.validation.counterargument),
       root_cause_key: root_cause_key(row),
-      claim_tokens: token_set(text) |> MapSet.size()
+      claim_tokens: token_set(text) |> MapSet.size(),
+      proof_type: proof_type,
+      typed_proof_gates: config.typed_proof_gates?,
+      invariant_ledger_id: config.invariant_ledger.id,
+      matched_invariants: Enum.map(invariant_matches.support, &Map.get(&1, "id", "unknown")),
+      suppressing_invariants: Enum.map(invariant_matches.suppress, &Map.get(&1, "id", "unknown"))
     }
+
+    Map.merge(base, typed_proof_features(row, text, proof_type, invariant_matches, base, config))
   end
 
   defp useful_observation?(%{ok: false}), do: false
@@ -937,23 +1005,30 @@ defmodule SugaryCodexStagedReviewReviewer do
   defp useful_observation?(_observation), do: false
 
   defp proof_suppression_reasons(_row, features, score, config) do
-    []
-    |> maybe_reason(not features.validator_validated, "validator_not_validated")
-    |> maybe_reason(
-      features.validation_confidence < config.min_validation_confidence,
-      "low_validation_confidence"
-    )
-    |> maybe_reason(score < config.min_proof_score, "low_proof_score")
-    |> maybe_reason(not features.introduced_by_pr, "not_introduced_by_pr")
-    |> maybe_reason(not features.has_repo_evidence, "missing_repo_evidence")
-    |> maybe_reason(not features.has_failure_path, "missing_failure_path")
-    |> maybe_reason(
-      not features.evidence_mentions_changed_code,
-      "missing_introducedness_evidence"
-    )
-    |> maybe_reason(not features.expected_failure_language, "missing_expected_failure")
-    |> maybe_reason(features.speculative_language, "speculative_language")
-    |> maybe_reason(features.counterargument_strength == "strong", "strong_counterargument")
+    reasons =
+      []
+      |> maybe_reason(not features.validator_validated, "validator_not_validated")
+      |> maybe_reason(
+        features.validation_confidence < config.min_validation_confidence,
+        "low_validation_confidence"
+      )
+      |> maybe_reason(score < config.min_proof_score, "low_proof_score")
+      |> maybe_reason(not features.introduced_by_pr, "not_introduced_by_pr")
+      |> maybe_reason(not features.has_repo_evidence, "missing_repo_evidence")
+      |> maybe_reason(not features.has_failure_path, "missing_failure_path")
+      |> maybe_reason(
+        not features.evidence_mentions_changed_code,
+        "missing_introducedness_evidence"
+      )
+      |> maybe_reason(not features.expected_failure_language, "missing_expected_failure")
+      |> maybe_reason(
+        features.speculative_language and not features.typed_speculation_allowed,
+        "speculative_language"
+      )
+      |> maybe_reason(features.counterargument_strength == "strong", "strong_counterargument")
+
+    (reasons ++ features.typed_suppression_reasons)
+    |> Enum.uniq()
   end
 
   defp maybe_reason(reasons, true, reason), do: [reason | reasons]
@@ -971,10 +1046,14 @@ defmodule SugaryCodexStagedReviewReviewer do
         0.10 * bool_score(features.evidence_mentions_changed_code) +
         0.08 * bool_score(features.expected_failure_language) +
         0.04 * bool_score(features.has_suggested_fix) +
-        0.04 * bool_score(features.has_suggested_test)
+        0.04 * bool_score(features.has_suggested_test) +
+        0.06 * bool_score(features.typed_requirements_met) +
+        0.05 * bool_score(features.matched_invariants != [])
 
     penalty =
-      0.18 * bool_score(features.speculative_language) +
+      0.18 * bool_score(features.speculative_language and not features.typed_speculation_allowed) +
+        0.14 * bool_score(features.typed_suppression_reasons != []) +
+        0.12 * bool_score(features.suppressing_invariants != []) +
         case features.counterargument_strength do
           "strong" -> 0.2
           "medium" -> 0.08
@@ -983,6 +1062,236 @@ defmodule SugaryCodexStagedReviewReviewer do
 
     max(base - penalty, 0.0)
   end
+
+  defp typed_proof_features(_row, _text, _proof_type, _matches, _base, %{
+         typed_proof_gates?: false
+       }) do
+    %{
+      typed_requirements_met: false,
+      typed_speculation_allowed: false,
+      typed_suppression_reasons: [],
+      typed_score_bonus: 0.0
+    }
+  end
+
+  defp typed_proof_features(_row, text, proof_type, matches, base, _config) do
+    text = String.downcase(to_string(text))
+
+    typed_reasons =
+      []
+      |> maybe_reason(
+        proof_type == "api_contract" and not api_contract_proof?(text, base),
+        "missing_api_contract_proof"
+      )
+      |> maybe_reason(
+        proof_type == "upload_limit_contract" and not upload_limit_contract_proof?(text, matches),
+        "missing_upload_limit_contract_proof"
+      )
+      |> maybe_reason(
+        proof_type == "security_injection" and not controllable_input_proof?(text),
+        "missing_controllable_input_proof"
+      )
+      |> maybe_reason(
+        proof_type == "resource_exhaustion" and not resource_bound_proof?(text),
+        "missing_resource_bound_proof"
+      )
+      |> maybe_reason(
+        proof_type == "state_precondition" and not state_precondition_proof?(text),
+        "missing_state_precondition_proof"
+      )
+
+    invariant_reasons =
+      matches.suppress
+      |> Enum.map(&(Map.get(&1, "reason") || "repo_invariant_refuted"))
+
+    support? = matches.support != []
+
+    speculation_allowed? =
+      support? and proof_type in ["api_contract", "upload_limit_contract", "state_precondition"]
+
+    all_reasons = Enum.uniq(typed_reasons ++ invariant_reasons)
+
+    %{
+      typed_requirements_met: all_reasons == [] and proof_type != "generic",
+      typed_speculation_allowed: speculation_allowed?,
+      typed_suppression_reasons: all_reasons,
+      typed_score_bonus: if(support?, do: 0.05, else: 0.0)
+    }
+  end
+
+  defp api_contract_proof?(text, base) do
+    base.root_cause_key not in [nil, ""] and
+      (String.contains?(text, "argument") or
+         String.contains?(text, "arity") or
+         String.contains?(text, "signature") or
+         String.contains?(text, "contract") or
+         String.contains?(text, "caller"))
+  end
+
+  defp upload_limit_contract_proof?(text, matches) do
+    matches.support != [] or
+      ((String.contains?(text, "site setting") or String.contains?(text, "sitesetting")) and
+         (String.contains?(text, "10 mb") or String.contains?(text, "10mb") or
+            String.contains?(text, "hard-code") or String.contains?(text, "hardcode")))
+  end
+
+  defp controllable_input_proof?(text) do
+    Enum.any?(
+      [
+        "attacker",
+        "user-controlled",
+        "user controlled",
+        "untrusted",
+        "request param",
+        "params[",
+        "api input",
+        "external input",
+        "remote input"
+      ],
+      &String.contains?(text, &1)
+    )
+  end
+
+  defp state_precondition_proof?(text) do
+    Enum.any?(
+      ["signed out", "logged out", "unauthenticated", "without requiring", "without checking"],
+      &String.contains?(text, &1)
+    ) or
+      (String.contains?(text, "current_user") and
+         Enum.any?(
+           ["nil", "dereference", "raises", "raise", "crash"],
+           &String.contains?(text, &1)
+         ))
+  end
+
+  defp resource_bound_proof?(text) do
+    Enum.any?(
+      ["unbounded", "no limit", "arbitrary size", "amplification", "infinite", "until success"],
+      &String.contains?(text, &1)
+    )
+  end
+
+  defp proof_type(row, text) do
+    text = String.downcase(to_string(text))
+    category = Map.get(row.candidate, "category", "") |> to_string() |> String.downcase()
+    path = Map.get(row.candidate, "path", "") |> to_string() |> String.downcase()
+
+    cond do
+      Enum.any?(
+        ["imagemagick", "expensive", "conversion", "resource", "cpu", "memory"],
+        &String.contains?(text, &1)
+      ) ->
+        "resource_exhaustion"
+
+      String.contains?(text, "site setting") or String.contains?(text, "sitesetting") or
+        String.contains?(text, "size_kb") or String.contains?(text, "10 mb") ->
+        "upload_limit_contract"
+
+      String.contains?(text, "sql injection") or
+          (String.contains?(text, "sql") and String.contains?(text, "interpolat")) ->
+        "security_injection"
+
+      String.contains?(text, "argumenterror") or String.contains?(text, "arity") or
+        String.contains?(text, "signature") or String.contains?(text, "api contract") ->
+        "api_contract"
+
+      String.contains?(text, "topicuser") and
+          (String.contains?(text, "nil") or String.contains?(text, "find_by")) ->
+        "runtime_nil"
+
+      String.contains?(text, "nil") or String.contains?(text, "null") or
+        String.contains?(text, "nomethoderror") or String.contains?(text, "dereference") ->
+        "runtime_nil"
+
+      String.contains?(text, "current_user") or String.contains?(text, "csrf") or
+        String.contains?(category, "auth") or String.contains?(category, "state-changing") ->
+        "state_precondition"
+
+      String.contains?(path, "db/migrate") or String.contains?(text, "migration") ->
+        "migration_contract"
+
+      true ->
+        "generic"
+    end
+  end
+
+  defp invariant_matches(invariants, text, proof_type) do
+    text = String.downcase(to_string(text))
+
+    Enum.reduce(invariants, %{support: [], suppress: []}, fn invariant, acc ->
+      type = Map.get(invariant, "proof_type", "any")
+      type_matches? = type in ["any", proof_type]
+
+      support? =
+        type_matches? and
+          invariant_terms_match?(text, Map.get(invariant, "support_terms", []))
+
+      suppress? =
+        type_matches? and
+          invariant_terms_match?(text, Map.get(invariant, "suppress_terms", [])) and
+          missing_required_invariant_terms?(text, Map.get(invariant, "missing_any_terms", []))
+
+      acc
+      |> update_invariant_matches(:support, support?, invariant)
+      |> update_invariant_matches(:suppress, suppress?, invariant)
+    end)
+  end
+
+  defp update_invariant_matches(matches, key, true, invariant),
+    do: Map.update!(matches, key, &[invariant | &1])
+
+  defp update_invariant_matches(matches, _key, false, _invariant), do: matches
+
+  defp invariant_terms_match?(_text, []), do: false
+
+  defp invariant_terms_match?(text, terms) do
+    Enum.all?(terms, &String.contains?(text, String.downcase(to_string(&1))))
+  end
+
+  defp missing_required_invariant_terms?(_text, []), do: true
+
+  defp missing_required_invariant_terms?(text, terms) do
+    not Enum.any?(terms, &String.contains?(text, String.downcase(to_string(&1))))
+  end
+
+  defp load_invariant_ledger(nil), do: empty_invariant_ledger(nil)
+  defp load_invariant_ledger(""), do: empty_invariant_ledger("")
+
+  defp load_invariant_ledger(path) do
+    expanded = Path.expand(path)
+
+    case File.read(expanded) do
+      {:ok, json} ->
+        case :json.decode(json) do
+          %{} = data ->
+            %{
+              id: Map.get(data, "id", Path.basename(path, ".json")),
+              path: path,
+              error: nil,
+              invariants: normalize_invariants(Map.get(data, "invariants", []))
+            }
+
+          _other ->
+            %{empty_invariant_ledger(path) | error: "ledger_not_object"}
+        end
+
+      {:error, reason} ->
+        %{empty_invariant_ledger(path) | error: "ledger_read_failed:#{reason}"}
+    end
+  rescue
+    error ->
+      %{empty_invariant_ledger(path) | error: "ledger_parse_failed:#{Exception.message(error)}"}
+  end
+
+  defp empty_invariant_ledger(path) do
+    %{id: nil, path: path, error: nil, invariants: []}
+  end
+
+  defp normalize_invariants(invariants) when is_list(invariants) do
+    Enum.filter(invariants, &is_map/1)
+  end
+
+  defp normalize_invariants(_other), do: []
 
   defp bool_score(true), do: 1.0
   defp bool_score(false), do: 0.0
@@ -1459,6 +1768,13 @@ defmodule SugaryCodexStagedReviewReviewer do
       validation_count: length(state.validation_stage),
       validated_count: length(state.validated),
       proof_gate: config.proof_gate?,
+      typed_proof_gates: config.typed_proof_gates?,
+      invariant_ledger: %{
+        id: config.invariant_ledger.id,
+        path: config.invariant_ledger.path,
+        error: config.invariant_ledger.error,
+        invariant_count: length(config.invariant_ledger.invariants)
+      },
       proof_summary: proof_summary(state.validation_stage),
       candidate_calls: state.candidate_calls,
       validation_stage: compact_validation_stage(state.validation_stage)
@@ -1474,6 +1790,9 @@ defmodule SugaryCodexStagedReviewReviewer do
         suppressions: %{},
         duplicate_root_cause: 0,
         cited_tool_observation_claims: 0,
+        proof_type_counts: %{},
+        matched_invariants: %{},
+        suppressing_invariants: %{},
         validation_latency_ms: 0
       },
       fn row, acc ->
@@ -1491,6 +1810,21 @@ defmodule SugaryCodexStagedReviewReviewer do
             Map.update(counts, reason, 1, &(&1 + 1))
           end)
 
+        proof_type_counts =
+          Map.update(acc.proof_type_counts, row.proof.features.proof_type, 1, &(&1 + 1))
+
+        matched_invariants =
+          row.proof.features.matched_invariants
+          |> Enum.reduce(acc.matched_invariants, fn invariant, counts ->
+            Map.update(counts, invariant, 1, &(&1 + 1))
+          end)
+
+        suppressing_invariants =
+          row.proof.features.suppressing_invariants
+          |> Enum.reduce(acc.suppressing_invariants, fn invariant, counts ->
+            Map.update(counts, invariant, 1, &(&1 + 1))
+          end)
+
         %{
           acc
           | validator_validated: acc.validator_validated + validator_validated,
@@ -1500,6 +1834,9 @@ defmodule SugaryCodexStagedReviewReviewer do
               acc.duplicate_root_cause +
                 if("duplicate_root_cause" in row.proof.reasons, do: 1, else: 0),
             cited_tool_observation_claims: acc.cited_tool_observation_claims + cited,
+            proof_type_counts: proof_type_counts,
+            matched_invariants: matched_invariants,
+            suppressing_invariants: suppressing_invariants,
             validation_latency_ms: acc.validation_latency_ms + (row.validation.duration_ms || 0)
         }
       end

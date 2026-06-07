@@ -1,0 +1,56 @@
+{
+  "id": "pcrs-v8-discourse-invariants-v0",
+  "description": "Small repo-invariant ledger for PCRS v8 typed proof gate smoke tests on local Martian Discourse cases. These invariants are used only as proof/refutation context, never as benchmark oracle data.",
+  "invariants": [
+    {
+      "id": "discourse-upload-size-settings-contract",
+      "proof_type": "upload_limit_contract",
+      "support_terms": ["site", "setting", "10 mb", "upload"],
+      "reason": "Discourse upload size limits are configurable site-setting contracts; hard-coded upload limits are actionable contract regressions."
+    },
+    {
+      "id": "sql-injection-needs-controllable-input",
+      "proof_type": "security_injection",
+      "suppress_terms": ["migration", "sql"],
+      "missing_any_terms": [
+        "attacker",
+        "user-controlled",
+        "user controlled",
+        "untrusted",
+        "request param",
+        "params[",
+        "api input",
+        "external input"
+      ],
+      "reason": "missing_controllable_input_proof"
+    },
+    {
+      "id": "topic-user-nil-needs-absence-proof",
+      "proof_type": "runtime_nil",
+      "suppress_terms": ["topicuser", "find_by", "notification_level"],
+      "missing_any_terms": [
+        "signed out",
+        "logged out",
+        "unauthenticated",
+        "not created",
+        "no row",
+        "no topicuser row",
+        "guest"
+      ],
+      "reason": "missing_topic_user_absence_proof"
+    },
+    {
+      "id": "current-user-public-route-precondition",
+      "proof_type": "state_precondition",
+      "support_terms": ["current_user.id", "signed out"],
+      "reason": "Public routes that dereference current_user need an explicit authenticated-user precondition."
+    },
+    {
+      "id": "resource-exhaustion-needs-unbounded-work-proof",
+      "proof_type": "resource_exhaustion",
+      "suppress_terms": ["imagemagick", "conversion"],
+      "missing_any_terms": ["unbounded", "no limit", "arbitrary size", "amplification", "infinite"],
+      "reason": "missing_resource_bound_proof"
+    }
+  ]
+}

@@ -198,6 +198,142 @@ defmodule Sugary.CodexStagedReviewReviewerTest do
            ) == 1
   end
 
+  test "typed proof gate lets invariant-supported upload contract claims survive speculation wording" do
+    workspace = tmp_dir("staged-typed-upload-workspace")
+
+    on_exit(fn -> File.rm_rf(workspace) end)
+
+    File.mkdir_p!(Path.join(workspace, "src"))
+
+    File.write!(
+      Path.join(workspace, "src/upload.ts"),
+      "export const limit = '10 MB';\nexport const setting = 'SiteSetting max upload size';\n"
+    )
+
+    input =
+      ReviewInputBundle.new(%{
+        case_id: "blind-case",
+        suite: "blind",
+        pr: %{title: "Upload limit change", body: ""},
+        diff: "diff --git a/src/upload.ts b/src/upload.ts\n+export const limit = '10 MB';\n",
+        context: %{changed_files: [%{path: "src/upload.ts"}]},
+        method: %{id: "staged-wrapper-test"},
+        metadata: %{workspace: %{head: workspace, base: workspace}}
+      })
+
+    result =
+      run_reviewer(input, %{
+        "SUGARY_STAGED_PROOF_GATE" => "1",
+        "SUGARY_STAGED_TYPED_PROOF_GATES" => "1",
+        "SUGARY_STAGED_INVARIANT_LEDGER" => "invariants/pcrs-v8-discourse-invariants-v0.json",
+        "SUGARY_STAGED_FAKE_TYPED_CASE" => "upload_limit"
+      })
+
+    [artifact] = result["artifacts"]
+    [claim] = result["claims"]
+    [validation] = artifact["validation_stage"]
+
+    assert artifact["typed_proof_gates"] == true
+    assert artifact["invariant_ledger"]["id"] == "pcrs-v8-discourse-invariants-v0"
+    assert claim["source"]["proof_features"]["proof_type"] == "upload_limit_contract"
+
+    assert "discourse-upload-size-settings-contract" in validation["proof_features"][
+             "matched_invariants"
+           ]
+
+    refute "speculative_language" in validation["proof_reasons"]
+  end
+
+  test "typed proof gate suppresses sql injection claims without controllable input proof" do
+    workspace = tmp_dir("staged-typed-sql-workspace")
+
+    on_exit(fn -> File.rm_rf(workspace) end)
+
+    File.mkdir_p!(Path.join(workspace, "db/migrate"))
+
+    File.write!(
+      Path.join(workspace, "db/migrate/001_fake.rb"),
+      "class FakeMigration\n  def change\n    execute \"INSERT INTO rows\"\n  end\nend\n"
+    )
+
+    input =
+      ReviewInputBundle.new(%{
+        case_id: "blind-case",
+        suite: "blind",
+        pr: %{title: "Migration change", body: ""},
+        diff:
+          "diff --git a/db/migrate/001_fake.rb b/db/migrate/001_fake.rb\n+execute \"INSERT INTO rows\"\n",
+        context: %{changed_files: [%{path: "db/migrate/001_fake.rb"}]},
+        method: %{id: "staged-wrapper-test"},
+        metadata: %{workspace: %{head: workspace, base: workspace}}
+      })
+
+    result =
+      run_reviewer(input, %{
+        "SUGARY_STAGED_PROOF_GATE" => "1",
+        "SUGARY_STAGED_TYPED_PROOF_GATES" => "1",
+        "SUGARY_STAGED_INVARIANT_LEDGER" => "invariants/pcrs-v8-discourse-invariants-v0.json",
+        "SUGARY_STAGED_FAKE_TYPED_CASE" => "sql_injection"
+      })
+
+    [artifact] = result["artifacts"]
+    [validation] = artifact["validation_stage"]
+
+    assert result["claims"] == []
+    assert validation["proof_features"]["proof_type"] == "security_injection"
+
+    assert "sql-injection-needs-controllable-input" in validation["proof_features"][
+             "suppressing_invariants"
+           ]
+
+    assert "missing_controllable_input_proof" in validation["proof_reasons"]
+  end
+
+  test "typed proof gate suppresses topic user nil claims without absence proof" do
+    workspace = tmp_dir("staged-typed-topic-user-workspace")
+
+    on_exit(fn -> File.rm_rf(workspace) end)
+
+    File.mkdir_p!(Path.join(workspace, "app/controllers"))
+
+    File.write!(
+      Path.join(workspace, "app/controllers/topics_controller.rb"),
+      "tu = TopicUser.find_by(user_id: current_user.id, topic_id: params[:topic_id])\ntu.notification_level\n"
+    )
+
+    input =
+      ReviewInputBundle.new(%{
+        case_id: "blind-case",
+        suite: "blind",
+        pr: %{title: "Topic unsubscribe", body: ""},
+        diff:
+          "diff --git a/app/controllers/topics_controller.rb b/app/controllers/topics_controller.rb\n+tu = TopicUser.find_by(user_id: current_user.id, topic_id: params[:topic_id])\n+tu.notification_level\n",
+        context: %{changed_files: [%{path: "app/controllers/topics_controller.rb"}]},
+        method: %{id: "staged-wrapper-test"},
+        metadata: %{workspace: %{head: workspace, base: workspace}}
+      })
+
+    result =
+      run_reviewer(input, %{
+        "SUGARY_STAGED_PROOF_GATE" => "1",
+        "SUGARY_STAGED_TYPED_PROOF_GATES" => "1",
+        "SUGARY_STAGED_INVARIANT_LEDGER" => "invariants/pcrs-v8-discourse-invariants-v0.json",
+        "SUGARY_STAGED_FAKE_TYPED_CASE" => "topic_user_nil"
+      })
+
+    [artifact] = result["artifacts"]
+    [validation] = artifact["validation_stage"]
+
+    assert result["claims"] == []
+    assert validation["proof_features"]["proof_type"] == "runtime_nil"
+
+    assert "topic-user-nil-needs-absence-proof" in validation["proof_features"][
+             "suppressing_invariants"
+           ]
+
+    assert "missing_topic_user_absence_proof" in validation["proof_reasons"]
+  end
+
   defp tmp_dir(name) do
     Path.join(System.tmp_dir!(), "sugary-#{name}-#{System.unique_integer([:positive])}")
   end
