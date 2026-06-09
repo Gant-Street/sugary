@@ -198,6 +198,111 @@ defmodule Sugary.CodexStagedReviewReviewerTest do
            ) == 1
   end
 
+  test "dedupe v5 suppresses api contract duplicates with the same affected symbol" do
+    workspace = tmp_dir("staged-proof-api-duplicate-workspace")
+
+    on_exit(fn -> File.rm_rf(workspace) end)
+
+    File.mkdir_p!(Path.join(workspace, "lib"))
+
+    File.write!(
+      Path.join(workspace, "lib/optimized_image.rb"),
+      "class OptimizedImage\n  def self.downsize(from, to, dimensions, opts = {})\n  end\nend\n"
+    )
+
+    File.write!(
+      Path.join(workspace, "lib/caller.rb"),
+      "OptimizedImage.downsize(from, to, max_width, max_height, opts)\n"
+    )
+
+    input =
+      ReviewInputBundle.new(%{
+        case_id: "blind-case",
+        suite: "blind",
+        pr: %{title: "Downsize API change", body: ""},
+        diff: """
+        diff --git a/lib/optimized_image.rb b/lib/optimized_image.rb
+        +  def self.downsize(from, to, dimensions, opts = {})
+        diff --git a/lib/caller.rb b/lib/caller.rb
+        +OptimizedImage.downsize(from, to, max_width, max_height, opts)
+        """,
+        context: %{
+          changed_files: [%{path: "lib/optimized_image.rb"}, %{path: "lib/caller.rb"}]
+        },
+        method: %{id: "staged-wrapper-test"},
+        metadata: %{workspace: %{head: workspace, base: workspace}}
+      })
+
+    result =
+      run_reviewer(input, %{
+        "SUGARY_STAGED_PROOF_GATE" => "1",
+        "SUGARY_STAGED_DEDUPE_VERSION" => "5",
+        "SUGARY_STAGED_FAKE_TYPED_CASE" => "api_duplicate"
+      })
+
+    [artifact] = result["artifacts"]
+
+    assert artifact["dedupe_version"] == 5
+    assert length(result["claims"]) == 1
+    assert artifact["candidate_count"] == 2
+    assert artifact["validated_count"] == 1
+    assert artifact["proof_summary"]["duplicate_root_cause"] == 1
+  end
+
+  test "dedupe v5 suppresses theme color migration duplicates across selectors" do
+    workspace = tmp_dir("staged-proof-theme-duplicate-workspace")
+
+    on_exit(fn -> File.rm_rf(workspace) end)
+
+    File.mkdir_p!(Path.join(workspace, "app/assets/stylesheets"))
+
+    File.write!(
+      Path.join(workspace, "app/assets/stylesheets/modal.scss"),
+      ".custom-message-length { color: scale-color($primary, $lightness: 30%); }\n"
+    )
+
+    File.write!(
+      Path.join(workspace, "app/assets/stylesheets/post.scss"),
+      ".reply a { color: scale-color($primary, $lightness: 70%); }\n"
+    )
+
+    input =
+      ReviewInputBundle.new(%{
+        case_id: "blind-case",
+        suite: "blind",
+        pr: %{title: "Theme color migration", body: ""},
+        diff: """
+        diff --git a/app/assets/stylesheets/modal.scss b/app/assets/stylesheets/modal.scss
+        +.custom-message-length { color: scale-color($primary, $lightness: 30%); }
+        diff --git a/app/assets/stylesheets/post.scss b/app/assets/stylesheets/post.scss
+        +.reply a { color: scale-color($primary, $lightness: 70%); }
+        """,
+        context: %{
+          changed_files: [
+            %{path: "app/assets/stylesheets/modal.scss"},
+            %{path: "app/assets/stylesheets/post.scss"}
+          ]
+        },
+        method: %{id: "staged-wrapper-test"},
+        metadata: %{workspace: %{head: workspace, base: workspace}}
+      })
+
+    result =
+      run_reviewer(input, %{
+        "SUGARY_STAGED_PROOF_GATE" => "1",
+        "SUGARY_STAGED_DEDUPE_VERSION" => "5",
+        "SUGARY_STAGED_FAKE_TYPED_CASE" => "theme_color_duplicate"
+      })
+
+    [artifact] = result["artifacts"]
+
+    assert artifact["dedupe_version"] == 5
+    assert length(result["claims"]) == 1
+    assert artifact["candidate_count"] == 2
+    assert artifact["validated_count"] == 1
+    assert artifact["proof_summary"]["duplicate_root_cause"] == 1
+  end
+
   test "typed proof gate lets invariant-supported upload contract claims survive speculation wording" do
     workspace = tmp_dir("staged-typed-upload-workspace")
 

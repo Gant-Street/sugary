@@ -2446,3 +2446,87 @@ Next research implication:
   - keep candidate generation unchanged
   - replay dev10 and a fresh adjacent slice under the fixed cache key
   - promotion target: preserve v8's 8 hits while cutting duplicate noise by at least 2 and reducing published comments
+
+## 2026-06-08: PCRS v9 Semantic Duplicate Publisher
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: negative live result; do not promote
+suite: Martian offline local smoke, cases 1-10
+official benchmark score: not claimed
+model: Codex CLI, gpt-5.5 low
+```
+
+Question:
+
+```text
+Can a semantic duplicate publisher improve v8 by suppressing same-root-cause
+comments without losing true positives?
+```
+
+What changed:
+
+- Wired `SUGARY_STAGED_DEDUPE_VERSION` into the staged reviewer. It had previously been present in manifests but was not read.
+- Added `dedupe_version` to staged reviewer artifacts.
+- Fixed duplicate suppression so already-suppressed claims do not reserve duplicate keys.
+- Added dedupe v5 semantic duplicate keys for:
+  - API contract claims with the same affected symbol
+  - theme-color regression claims from the same style migration
+- Added focused fake-mode tests for both duplicate classes.
+- Added `experiments/codex-staged-publisher-v9-martian-dev10-v0.toml`.
+
+Command:
+
+```sh
+./sugary experiment run \
+  experiments/codex-staged-publisher-v9-martian-dev10-v0.toml \
+  --replay-mode cache-first
+```
+
+Run artifact:
+
+```text
+.sugary/research/runs/20260609T020959Z-codex-staged-publisher-v9-martian-dev10-v0
+```
+
+Result:
+
+| Method | F1 | Recall | Precision | Usefulness | SNR | Hits | Noise | Published | Avg comments | Latency ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-low-no-tools` | 0.195 | 0.143 | 0.308 | 0.308 | 0.444 | 4 | 9 | 13 | 1.300 | 193,941 |
+| `codex-gpt-5.5-low-staged-typed-proof-v8` | 0.242 | 0.143 | 0.800 | 0.800 | 4.000 | 4 | 1 | 5 | 0.500 | 1,139,652 |
+| `codex-gpt-5.5-low-staged-publisher-v9` | 0.121 | 0.071 | 0.400 | 0.400 | 0.667 | 2 | 3 | 5 | 0.500 | 1,044,728 |
+
+Decision:
+
+```text
+Do not promote v9 semantic duplicate publisher.
+PCRS v8 remains the current staged research candidate.
+```
+
+Interpretation:
+
+- v9 did activate the intended mechanism:
+  - dedupe version 5 appeared in artifacts
+  - duplicate-root-cause suppressions increased to 2
+- But v9 lost too much recall:
+  - v8: 4 hits / 1 noise
+  - v9: 2 hits / 3 noise
+- The live comparison is not a clean publisher-only ablation because v8 and v9 made separate live model calls. Candidate generation and validation varied between methods.
+- This is the core methodological lesson:
+  - live reviewer comparisons are useful for end-to-end product behavior
+  - publisher changes must also be tested on fixed captured candidate/validation rows
+- The next high-conviction infrastructure move is a publisher-only replay ablation:
+  - read captured staged validation artifacts
+  - apply publisher policies offline
+  - score final claims against the same cases
+  - compare v8/v9-style publishing without model variance
+
+Next research implication:
+
+- Keep the v9 dedupe code as an experimental opt-in only.
+- Do not add new model roles or tools.
+- Build publisher-only replay ablations before another live staged publisher experiment.
+- Latency remains unacceptable for product use:
+  - staged v8/v9 take roughly 17-19 minutes for 10 cases
+  - quality gains need parallelism or cheaper deterministic proof passes before customer PR/MR use

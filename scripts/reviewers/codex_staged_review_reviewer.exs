@@ -72,6 +72,7 @@ defmodule SugaryCodexStagedReviewReviewer do
       proof_gate?: System.get_env("SUGARY_STAGED_PROOF_GATE") in ["1", "true", "TRUE"],
       typed_proof_gates?:
         System.get_env("SUGARY_STAGED_TYPED_PROOF_GATES") in ["1", "true", "TRUE"],
+      dedupe_version: int_env("SUGARY_STAGED_DEDUPE_VERSION", 1),
       min_proof_score: float_env("SUGARY_STAGED_MIN_PROOF_SCORE", 0.72),
       invariant_ledger:
         System.get_env("SUGARY_STAGED_INVARIANT_LEDGER") |> load_invariant_ledger(),
@@ -139,7 +140,7 @@ defmodule SugaryCodexStagedReviewReviewer do
       validation_stage
       |> Enum.map(&Map.put(&1, :proof, proof_decision(&1, config)))
 
-    post_dedupe_stage = suppress_duplicate_root_causes(proof_stage)
+    post_dedupe_stage = suppress_duplicate_root_causes(proof_stage, config)
 
     validated =
       post_dedupe_stage
@@ -245,6 +246,46 @@ defmodule SugaryCodexStagedReviewReviewer do
               "The unsubscribe action can crash when TopicUser.find_by returns nil and `tu.notification_level` is dereferenced.",
               "runtime_nil",
               "Fake candidate cites a nil TopicUser possibility without proving a missing row path."
+            )
+          ]
+
+        typed_case == "api_duplicate" and role.id == "diff-bug" ->
+          [
+            fake_typed_candidate(
+              path,
+              "Adding a second `OptimizedImage.downsize` definition replaces the existing API, so callers passing width and height now raise `ArgumentError`.",
+              "api_contract",
+              "Fake candidate cites the duplicate Ruby method definition and changed API contract."
+            )
+          ]
+
+        typed_case == "api_duplicate" and role.id == "contract-regression" ->
+          [
+            fake_typed_candidate(
+              Enum.at(paths, 1, path),
+              "The PR replaces `OptimizedImage.downsize(from, to, max_width, max_height, opts)` with an incompatible overload, which will fail for existing callers.",
+              "api_contract",
+              "Fake candidate cites existing callers that still use the old OptimizedImage.downsize contract."
+            )
+          ]
+
+        typed_case == "theme_color_duplicate" and role.id == "diff-bug" ->
+          [
+            fake_typed_candidate(
+              path,
+              "The mobile `.custom-message-length` light-theme color changes from the old 70% primary shade to 30%, a theme color regression that makes the hint inconsistent.",
+              "theme_color",
+              "Fake candidate cites changed Sass color semantics."
+            )
+          ]
+
+        typed_case == "theme_color_duplicate" and role.id == "contract-regression" ->
+          [
+            fake_typed_candidate(
+              Enum.at(paths, 1, path),
+              "The light-theme color for reply author links changes from a 30% lightened primary color to 70%, another theme color regression from the same Sass migration.",
+              "theme_color",
+              "Fake candidate cites changed Sass color semantics in another selector."
             )
           ]
 
@@ -1191,7 +1232,8 @@ defmodule SugaryCodexStagedReviewReviewer do
           (String.contains?(text, "sql") and String.contains?(text, "interpolat")) ->
         "security_injection"
 
-      String.contains?(text, "argumenterror") or String.contains?(text, "arity") or
+      String.contains?(category, "api") or String.contains?(category, "contract") or
+        String.contains?(text, "argumenterror") or String.contains?(text, "arity") or
         String.contains?(text, "signature") or String.contains?(text, "api contract") ->
         "api_contract"
 
@@ -1302,17 +1344,21 @@ defmodule SugaryCodexStagedReviewReviewer do
 
   defp proof_publish_score(row), do: row.proof.publish_score
 
-  defp suppress_duplicate_root_causes(rows) do
+  defp suppress_duplicate_root_causes(rows, config) do
     rows
     |> Enum.sort_by(&proof_publish_score/1, :desc)
     |> Enum.reduce(%{kept: [], seen: MapSet.new()}, fn row, acc ->
-      key = row.proof.features.root_cause_key
+      keys = duplicate_root_keys(row, config)
+      duplicate? = Enum.any?(keys, &MapSet.member?(acc.seen, &1))
 
       cond do
-        key in [nil, ""] ->
+        row.proof.decision != "publish" ->
           %{acc | kept: acc.kept ++ [row]}
 
-        MapSet.member?(acc.seen, key) ->
+        keys == [] ->
+          %{acc | kept: acc.kept ++ [row]}
+
+        duplicate? ->
           duplicate =
             put_in(row.proof.decision, "suppress")
             |> put_in([:proof, :reasons], ["duplicate_root_cause" | row.proof.reasons])
@@ -1320,10 +1366,93 @@ defmodule SugaryCodexStagedReviewReviewer do
           %{acc | kept: acc.kept ++ [duplicate]}
 
         true ->
-          %{acc | kept: acc.kept ++ [row], seen: MapSet.put(acc.seen, key)}
+          %{acc | kept: acc.kept ++ [row], seen: Enum.reduce(keys, acc.seen, &MapSet.put(&2, &1))}
       end
     end)
     |> Map.fetch!(:kept)
+  end
+
+  defp duplicate_root_keys(row, config) do
+    base =
+      row.proof.features.root_cause_key
+      |> List.wrap()
+      |> Enum.reject(&(&1 in [nil, ""]))
+
+    if config.dedupe_version >= 5 do
+      (base ++ semantic_duplicate_root_keys(row))
+      |> Enum.uniq()
+    else
+      base
+    end
+  end
+
+  defp semantic_duplicate_root_keys(row) do
+    text = validated_row_text(row)
+    proof_type = row.proof.features.proof_type
+
+    []
+    |> maybe_semantic_key(
+      proof_type == "api_contract",
+      api_contract_duplicate_key(text)
+    )
+    |> maybe_semantic_key(
+      theme_color_regression?(text),
+      "semantic:theme_color_regression"
+    )
+  end
+
+  defp maybe_semantic_key(keys, true, key) when key not in [nil, ""], do: [key | keys]
+  defp maybe_semantic_key(keys, _condition, _key), do: keys
+
+  defp api_contract_duplicate_key(text) do
+    text
+    |> root_cause_anchors()
+    |> Enum.find(&code_symbol_anchor?/1)
+    |> case do
+      nil -> nil
+      anchor -> "semantic:api_contract:#{anchor}"
+    end
+  end
+
+  defp code_symbol_anchor?(anchor) do
+    anchor = to_string(anchor)
+
+    String.contains?(anchor, ".") and
+      not Regex.match?(
+        ~r/\.(rb|erb|scss|css|ts|tsx|js|jsx|ex|exs|py|go|rs|java|kt|swift)$/i,
+        anchor
+      )
+  end
+
+  defp theme_color_regression?(text) do
+    text = String.downcase(to_string(text))
+
+    color_terms? =
+      Enum.any?(
+        ["color", "primary", "lightness", "lightened", "scale-color", "shade"],
+        &String.contains?(text, &1)
+      )
+
+    theme_terms? =
+      Enum.any?(
+        ["theme", "light-theme", "dark-theme", "sass", "scss", "selector"],
+        &String.contains?(text, &1)
+      )
+
+    regression_terms? =
+      Enum.any?(
+        [
+          "regression",
+          "changes from",
+          "changed from",
+          "inconsistent",
+          "much lighter",
+          "much darker"
+        ],
+        &String.contains?(text, &1)
+      )
+
+    color_terms? and theme_terms? and regression_terms?
   end
 
   defp root_cause_key(row) do
@@ -1769,6 +1898,7 @@ defmodule SugaryCodexStagedReviewReviewer do
       validated_count: length(state.validated),
       proof_gate: config.proof_gate?,
       typed_proof_gates: config.typed_proof_gates?,
+      dedupe_version: config.dedupe_version,
       invariant_ledger: %{
         id: config.invariant_ledger.id,
         path: config.invariant_ledger.path,
