@@ -2530,3 +2530,136 @@ Next research implication:
 - Latency remains unacceptable for product use:
   - staged v8/v9 take roughly 17-19 minutes for 10 cases
   - quality gains need parallelism or cheaper deterministic proof passes before customer PR/MR use
+
+## 2026-06-08: Staged Publisher Replay + Live Policy Check
+
+```text
+branch: codex/pcrs-v3-no-key-gauntlet
+status: replay positive, live policy check mixed/negative
+suite: Martian offline local smoke, cases 1-10
+official benchmark score: not claimed
+model: Codex CLI, gpt-5.5 low
+```
+
+Question:
+
+```text
+Can we isolate publisher/refuter policy on a fixed staged candidate pool,
+then carry the winning policy back into a live staged run?
+```
+
+What changed:
+
+- Added `Sugary.StagedPublisherReplay`.
+- Added CLI command:
+
+```sh
+./sugary pcrs staged replay \
+  --source-run .sugary/research/runs/<run-id> \
+  --method <staged-method-id> \
+  --baseline <baseline-method-id> \
+  --suite martian-offline \
+  --limit 10
+```
+
+- Added fixed-pool replay docs in `docs/staged-publisher-replay.md`.
+- Added opt-in live staged reviewer publisher policies via `SUGARY_STAGED_PUBLISHER_POLICY`.
+- Added live-check manifest:
+
+```text
+experiments/codex-staged-publisher-policy-dev10-v0.toml
+```
+
+Replay result on fixed v8 validation artifacts:
+
+```text
+source run: .sugary/research/runs/20260607T172124Z-codex-staged-typed-proof-gate-martian-dev10-v0
+replay artifact: .sugary/research/runs/20260609T031901Z-staged-publisher-replay-dev10-v0
+```
+
+| Policy | F1 | Recall | Usefulness | SNR | Hits | Noise | Published | Avg comments |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-low-no-tools` | 0.211 | 0.143 | 0.400 | 0.667 | 4 | 6 | 10 | 1.000 |
+| `source-proof-max-1` | 0.294 | 0.179 | 0.833 | 5.000 | 5 | 1 | 6 | 0.600 |
+| `source-proof-max-2` | 0.368 | 0.250 | 0.700 | 2.333 | 7 | 3 | 10 | 1.000 |
+| `source-proof-max-3` | 0.400 | 0.286 | 0.667 | 2.000 | 8 | 4 | 12 | 1.200 |
+
+Replay decision:
+
+```text
+Promote source-proof-max-2 for a live check.
+It cleared F1, usefulness, SNR, noise, comment-count, and unique-hit guardrails
+against the no-tool baseline on fixed v8 artifacts.
+```
+
+Replay result on fixed v9 validation artifacts:
+
+```text
+source run: .sugary/research/runs/20260609T020959Z-codex-staged-publisher-v9-martian-dev10-v0
+replay artifact: .sugary/research/runs/20260609T031923Z-staged-publisher-replay-v9-dev10-v0
+```
+
+| Policy | F1 | Recall | Usefulness | SNR | Hits | Noise | Published | Avg comments |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-low-no-tools` | 0.195 | 0.143 | 0.308 | 0.444 | 4 | 9 | 13 | 1.300 |
+| `source-proof-max-3` | 0.121 | 0.071 | 0.400 | 0.667 | 2 | 3 | 5 | 0.500 |
+| `repo-proof-score-max-2` | 0.316 | 0.214 | 0.600 | 1.500 | 6 | 4 | 10 | 1.000 |
+| `repo-proof-score-max-3` | 0.341 | 0.250 | 0.538 | 1.167 | 7 | 6 | 13 | 1.300 |
+
+Replay decision:
+
+```text
+Promote repo-proof-score-max-3 for a live check on v9-style settings.
+```
+
+Live policy check:
+
+```sh
+./sugary experiment run experiments/codex-staged-publisher-policy-dev10-v0.toml
+```
+
+Run artifact:
+
+```text
+.sugary/research/runs/20260609T032543Z-codex-staged-publisher-policy-dev10-v0
+```
+
+| Method | F1 | Recall | Precision | Usefulness | SNR | Hits | Noise | Published | Avg comments | Latency ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `codex-gpt-5.5-low-no-tools` | 0.256 | 0.179 | 0.455 | 0.455 | 0.833 | 5 | 6 | 11 | 1.100 | 181,836 |
+| `codex-gpt-5.5-low-staged-source-proof-max2` | 0.222 | 0.143 | 0.500 | 0.500 | 1.000 | 4 | 4 | 8 | 0.800 | 1,054,791 |
+| `codex-gpt-5.5-low-staged-repo-proof-score-max3` | 0.211 | 0.143 | 0.400 | 0.400 | 0.667 | 4 | 6 | 10 | 1.000 | 989,179 |
+
+Decision:
+
+```text
+Do not promote either live policy over the no-tool baseline on F1.
+source-proof-max2 is better on precision, SNR, noise, and comment count,
+but lower recall means lower F1.
+repo-proof-score-max3 did not survive live variance.
+```
+
+Interpretation:
+
+- Fixed-pool replay is now necessary infrastructure and should be used before live staged publisher experiments.
+- The positive replay did not transfer cleanly to a fresh live run because candidate generation/validation shifted.
+- Current staged PCRS improves selectivity but loses too much recall.
+- The bottleneck is now candidate recall under proof-compatible prompts, not merely publisher thresholding.
+- Rank analysis remains useful:
+  - no-tool rank-1 comments were net negative on this slice
+  - staged source-proof rank-1 comments were slightly positive
+  - staged second comments were net negative
+- Latency is still product-blocking:
+  - no-tool: 182s for 10 cases
+  - staged policies: 989-1,055s for 10 cases
+
+Next research implication:
+
+- Keep staged publisher replay.
+- Do not promote the new live publisher policies.
+- Next high-conviction move should attack recall without broadening variables:
+  - inspect staged false negatives and candidate misses
+  - revise candidate prompts to generate proof-compatible hypotheses
+  - keep publisher policy fixed at `source-proof-max-1` or `source-proof-max-2`
+  - live-check on the same dev10, then a locked adjacent slice
+- Add per-case progress logging before scaling live experiments to 25+ cases.

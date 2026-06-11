@@ -73,6 +73,7 @@ defmodule SugaryCodexStagedReviewReviewer do
       typed_proof_gates?:
         System.get_env("SUGARY_STAGED_TYPED_PROOF_GATES") in ["1", "true", "TRUE"],
       dedupe_version: int_env("SUGARY_STAGED_DEDUPE_VERSION", 1),
+      publisher_policy: System.get_env("SUGARY_STAGED_PUBLISHER_POLICY") || "source-proof",
       min_proof_score: float_env("SUGARY_STAGED_MIN_PROOF_SCORE", 0.72),
       invariant_ledger:
         System.get_env("SUGARY_STAGED_INVARIANT_LEDGER") |> load_invariant_ledger(),
@@ -142,18 +143,15 @@ defmodule SugaryCodexStagedReviewReviewer do
 
     post_dedupe_stage = suppress_duplicate_root_causes(proof_stage, config)
 
-    validated =
-      post_dedupe_stage
-      |> Enum.filter(&publishable_proof?/1)
-      |> Enum.sort_by(&proof_publish_score/1, :desc)
-      |> Enum.take(config.max_claims)
+    publisher_stage = apply_publisher_policy(post_dedupe_stage, config)
+    validated = Enum.filter(publisher_stage, &publishable_proof?/1)
 
     %{
       candidates: candidate_stage.candidates,
       candidate_calls: candidate_stage.calls,
-      validation_stage: post_dedupe_stage,
+      validation_stage: publisher_stage,
       validated: validated,
-      errors: candidate_stage.errors ++ validation_errors(post_dedupe_stage)
+      errors: candidate_stage.errors ++ validation_errors(publisher_stage)
     }
   end
 
@@ -1344,6 +1342,204 @@ defmodule SugaryCodexStagedReviewReviewer do
 
   defp proof_publish_score(row), do: row.proof.publish_score
 
+  defp apply_publisher_policy(rows, %{publisher_policy: "source-proof"} = config) do
+    apply_source_publisher_policy(rows, config.max_claims, "source-proof")
+  end
+
+  defp apply_publisher_policy(rows, config) do
+    policy = parse_publisher_policy(config.publisher_policy, config)
+
+    rows
+    |> Enum.map(&Map.put(&1, :publisher, publisher_decision(&1, policy)))
+    |> Enum.sort_by(& &1.publisher.score, :desc)
+    |> Enum.reduce(%{kept: [], seen: MapSet.new(), published: 0}, fn row, acc ->
+      keys = duplicate_root_keys(row, config)
+      duplicate? = Enum.any?(keys, &MapSet.member?(acc.seen, &1))
+
+      cond do
+        duplicate? ->
+          suppressed =
+            put_in(row.proof.decision, "suppress")
+            |> put_in([:proof, :reasons], ["duplicate_root_cause" | row.proof.reasons])
+            |> put_in([:publisher, :decision], "suppress")
+            |> put_in([:publisher, :reason], "duplicate_root_cause")
+
+          %{acc | kept: acc.kept ++ [suppressed]}
+
+        row.publisher.decision != "publish" ->
+          suppressed =
+            put_in(row.proof.decision, "suppress")
+            |> put_in([:proof, :reasons], Enum.uniq([row.publisher.reason | row.proof.reasons]))
+
+          %{acc | kept: acc.kept ++ [suppressed], seen: add_seen(acc.seen, keys)}
+
+        acc.published < policy.max_published ->
+          kept =
+            row
+            |> put_in([:proof, :publish_score], row.publisher.score)
+
+          %{
+            acc
+            | kept: acc.kept ++ [kept],
+              seen: add_seen(acc.seen, keys),
+              published: acc.published + 1
+          }
+
+        true ->
+          suppressed =
+            put_in(row.proof.decision, "suppress")
+            |> put_in([:proof, :reasons], Enum.uniq(["comment_budget" | row.proof.reasons]))
+            |> put_in([:publisher, :decision], "suppress")
+            |> put_in([:publisher, :reason], "comment_budget")
+
+          %{acc | kept: acc.kept ++ [suppressed], seen: add_seen(acc.seen, keys)}
+      end
+    end)
+    |> Map.fetch!(:kept)
+  end
+
+  defp apply_source_publisher_policy(rows, max_published, policy_id) do
+    rows
+    |> Enum.map(fn row ->
+      Map.put(row, :publisher, %{
+        policy: policy_id,
+        score: Float.round(proof_publish_score(row), 4),
+        decision: row.proof.decision,
+        reason: if(row.proof.decision == "publish", do: nil, else: Enum.at(row.proof.reasons, 0))
+      })
+    end)
+    |> Enum.sort_by(&proof_publish_score/1, :desc)
+    |> Enum.reduce(%{kept: [], published: 0}, fn row, acc ->
+      cond do
+        row.proof.decision != "publish" ->
+          %{acc | kept: acc.kept ++ [row]}
+
+        acc.published < max_published ->
+          %{acc | kept: acc.kept ++ [row], published: acc.published + 1}
+
+        true ->
+          suppressed =
+            put_in(row.proof.decision, "suppress")
+            |> put_in([:proof, :reasons], Enum.uniq(["comment_budget" | row.proof.reasons]))
+            |> put_in([:publisher, :decision], "suppress")
+            |> put_in([:publisher, :reason], "comment_budget")
+
+          %{acc | kept: acc.kept ++ [suppressed]}
+      end
+    end)
+    |> Map.fetch!(:kept)
+  end
+
+  defp add_seen(seen, keys), do: Enum.reduce(keys, seen, &MapSet.put(&2, &1))
+
+  defp parse_publisher_policy(value, config) do
+    value = to_string(value || "source-proof")
+
+    %{
+      id: value,
+      max_published:
+        case Regex.run(~r/max-(\d+)/, value) do
+          [_match, count] -> String.to_integer(count)
+          _other -> config.max_claims
+        end,
+      min_score:
+        cond do
+          String.starts_with?(value, "typed-repo-proof") -> 5.4
+          String.starts_with?(value, "repo-proof-score") -> 4.8
+          true -> 0.0
+        end,
+      require_source_publish: String.starts_with?(value, "source-proof"),
+      require_typed: String.starts_with?(value, "typed-repo-proof"),
+      require_repo_evidence:
+        String.starts_with?(value, "typed-repo-proof") or
+          String.starts_with?(value, "repo-proof-score"),
+      require_no_suppressing_invariant:
+        String.starts_with?(value, "typed-repo-proof") or
+          String.starts_with?(value, "repo-proof-score"),
+      require_expected_failure:
+        String.starts_with?(value, "typed-repo-proof") or
+          String.starts_with?(value, "repo-proof-score")
+    }
+  end
+
+  defp publisher_decision(row, policy) do
+    score = staged_publisher_score(row)
+
+    reason =
+      cond do
+        score < policy.min_score ->
+          "low_publisher_score"
+
+        policy.require_source_publish and row.proof.decision != "publish" ->
+          "source_proof_decision"
+
+        policy.require_typed and not row.proof.features.typed_requirements_met ->
+          "typed_requirements_not_met"
+
+        policy.require_repo_evidence and not row.proof.features.has_repo_evidence ->
+          "missing_repo_evidence"
+
+        policy.require_expected_failure and not row.proof.features.expected_failure_language ->
+          "missing_expected_failure"
+
+        policy.require_no_suppressing_invariant and
+            row.proof.features.suppressing_invariants != [] ->
+          "suppressing_invariant"
+
+        row.proof.features.speculative_language ->
+          "speculative_language"
+
+        row.proof.features.introduced_by_pr == false ->
+          "not_introduced_by_pr"
+
+        true ->
+          nil
+      end
+
+    %{
+      policy: policy.id,
+      score: Float.round(score, 4),
+      decision: if(reason, do: "suppress", else: "publish"),
+      reason: reason
+    }
+  end
+
+  defp staged_publisher_score(row) do
+    features = row.proof.features
+
+    row.proof.publish_score * 3.0 +
+      clamp_float(row.validation.confidence) * 1.2 +
+      publisher_severity_score(
+        row.validation.severity || Map.get(row.candidate, "severity", "medium")
+      ) +
+      bool_score(features.has_repo_evidence) * 0.65 +
+      bool_score(features.has_read_file) * 0.4 +
+      bool_score(features.has_repo_grep) * 0.45 +
+      bool_score(features.expected_failure_language) * 0.45 +
+      bool_score(features.has_failure_path) * 0.35 +
+      bool_score(features.typed_requirements_met) * 0.45 -
+      bool_score(features.speculative_language) * 0.8 -
+      length(features.suppressing_invariants) * 1.2 -
+      proof_reason_penalty(row.proof.reasons)
+  end
+
+  defp publisher_severity_score(severity) do
+    case normalize_severity(severity) do
+      "critical" -> 1.2
+      "high" -> 1.0
+      "medium" -> 0.65
+      "low" -> 0.2
+      _other -> 0.45
+    end
+  end
+
+  defp proof_reason_penalty(reasons) do
+    reasons
+    |> List.wrap()
+    |> Enum.count(&String.contains?(to_string(&1), ["low", "missing", "suppress"]))
+    |> Kernel.*(0.45)
+  end
+
   defp suppress_duplicate_root_causes(rows, config) do
     rows
     |> Enum.sort_by(&proof_publish_score/1, :desc)
@@ -1899,6 +2095,7 @@ defmodule SugaryCodexStagedReviewReviewer do
       proof_gate: config.proof_gate?,
       typed_proof_gates: config.typed_proof_gates?,
       dedupe_version: config.dedupe_version,
+      publisher_policy: config.publisher_policy,
       invariant_ledger: %{
         id: config.invariant_ledger.id,
         path: config.invariant_ledger.path,
@@ -1987,6 +2184,7 @@ defmodule SugaryCodexStagedReviewReviewer do
         proof_score: row.proof.publish_score,
         proof_reasons: row.proof.reasons,
         proof_features: row.proof.features,
+        publisher: Map.get(row, :publisher),
         evidence_summary: row.validation.evidence_summary |> to_string() |> String.slice(0, 1000),
         counterargument: row.validation.counterargument |> to_string() |> String.slice(0, 1000),
         error: row.validation.error,

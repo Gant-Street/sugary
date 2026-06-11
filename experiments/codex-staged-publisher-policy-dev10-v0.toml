@@ -1,0 +1,67 @@
+id = "codex-staged-publisher-policy-dev10-v0"
+description = "Unofficial local Martian dev10 live check for replay-selected staged publisher policies. Not an official benchmark score."
+suite = "martian-offline"
+limit = 10
+offset = 0
+replay_mode = "cache-first"
+max_cost_usd = 0.00
+max_duration_seconds = 7200
+
+[[reviewers]]
+id = "codex-gpt-5.5-low-no-tools"
+type = "command"
+enabled = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_exec_reviewer.exs"]
+timeout_ms = 180000
+stdout_limit = 262144
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "diff_only"]
+env = ["SUGARY_REVIEWER_ID=codex-gpt-5.5-low-no-tools", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000"]
+
+[[reviewers]]
+id = "codex-gpt-5.5-low-staged-source-proof-max2"
+type = "command"
+enabled = true
+include_workspace = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_staged_review_reviewer.exs"]
+timeout_ms = 900000
+stdout_limit = 524288
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "staged_review", "specialist_candidates", "independent_validation", "pcrs_proof_gate", "typed_proof_gates", "repo_invariant_ledger", "source_proof_publisher", "read_file", "repo_grep"]
+evidence = "staged_typed_proof_gate"
+refutation = "typed_proof_refutation_gate"
+ranking = "source_proof_max2"
+env = ["SUGARY_REVIEWER_ID=codex-gpt-5.5-low-staged-source-proof-max2", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000", "SUGARY_STAGED_MAX_CANDIDATES_PER_ROLE=2", "SUGARY_STAGED_MAX_VALIDATIONS=4", "SUGARY_STAGED_MIN_VALIDATION_CONFIDENCE=0.72", "SUGARY_STAGED_PROOF_GATE=1", "SUGARY_STAGED_MIN_PROOF_SCORE=0.72", "SUGARY_STAGED_TYPED_PROOF_GATES=1", "SUGARY_STAGED_INVARIANT_LEDGER=invariants/pcrs-v8-discourse-invariants-v0.json", "SUGARY_STAGED_DEDUPE_VERSION=4", "SUGARY_STAGED_PUBLISHER_POLICY=source-proof-max-2"]
+
+[[reviewers]]
+id = "codex-gpt-5.5-low-staged-repo-proof-score-max3"
+type = "command"
+enabled = true
+include_workspace = true
+required_executable = "codex"
+command = "elixir"
+args = ["scripts/reviewers/codex_staged_review_reviewer.exs"]
+timeout_ms = 900000
+stdout_limit = 524288
+stderr_limit = 262144
+cwd = "."
+requires_network = true
+requires_secrets = []
+cost_model = "chatgpt_auth_or_user_provider"
+capabilities = ["llm", "codex_cli", "staged_review", "specialist_candidates", "independent_validation", "pcrs_proof_gate", "typed_proof_gates", "repo_invariant_ledger", "repo_proof_score_publisher", "semantic_duplicate_publisher", "read_file", "repo_grep"]
+evidence = "staged_typed_proof_gate"
+refutation = "typed_proof_refutation_gate"
+ranking = "repo_proof_score_max3"
+env = ["SUGARY_REVIEWER_ID=codex-gpt-5.5-low-staged-repo-proof-score-max3", "SUGARY_CODEX_MODEL=gpt-5.5", "SUGARY_CODEX_REASONING_EFFORT=low", "SUGARY_CODEX_MAX_CLAIMS=3", "SUGARY_CODEX_INNER_TIMEOUT_MS=120000", "SUGARY_STAGED_MAX_CANDIDATES_PER_ROLE=2", "SUGARY_STAGED_MAX_VALIDATIONS=4", "SUGARY_STAGED_MIN_VALIDATION_CONFIDENCE=0.72", "SUGARY_STAGED_PROOF_GATE=1", "SUGARY_STAGED_MIN_PROOF_SCORE=0.72", "SUGARY_STAGED_TYPED_PROOF_GATES=1", "SUGARY_STAGED_INVARIANT_LEDGER=invariants/pcrs-v8-discourse-invariants-v0.json", "SUGARY_STAGED_DEDUPE_VERSION=5", "SUGARY_STAGED_PUBLISHER_POLICY=repo-proof-score-max-3"]

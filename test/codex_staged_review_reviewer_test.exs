@@ -249,6 +249,61 @@ defmodule Sugary.CodexStagedReviewReviewerTest do
     assert artifact["proof_summary"]["duplicate_root_cause"] == 1
   end
 
+  test "publisher policy can cap source-proof claims before publication" do
+    workspace = tmp_dir("staged-publisher-policy-workspace")
+
+    on_exit(fn -> File.rm_rf(workspace) end)
+
+    File.mkdir_p!(Path.join(workspace, "lib"))
+
+    File.write!(
+      Path.join(workspace, "lib/optimized_image.rb"),
+      "class OptimizedImage\n  def self.downsize(from, to, dimensions, opts = {})\n  end\nend\n"
+    )
+
+    File.write!(
+      Path.join(workspace, "lib/caller.rb"),
+      "OptimizedImage.downsize(from, to, max_width, max_height, opts)\n"
+    )
+
+    input =
+      ReviewInputBundle.new(%{
+        case_id: "blind-case",
+        suite: "blind",
+        pr: %{title: "Downsize API change", body: ""},
+        diff: """
+        diff --git a/lib/optimized_image.rb b/lib/optimized_image.rb
+        +  def self.downsize(from, to, dimensions, opts = {})
+        diff --git a/lib/caller.rb b/lib/caller.rb
+        +OptimizedImage.downsize(from, to, max_width, max_height, opts)
+        """,
+        context: %{
+          changed_files: [%{path: "lib/optimized_image.rb"}, %{path: "lib/caller.rb"}]
+        },
+        method: %{id: "staged-wrapper-test"},
+        metadata: %{workspace: %{head: workspace, base: workspace}}
+      })
+
+    result =
+      run_reviewer(input, %{
+        "SUGARY_STAGED_PROOF_GATE" => "1",
+        "SUGARY_STAGED_FAKE_TYPED_CASE" => "api_duplicate",
+        "SUGARY_STAGED_PUBLISHER_POLICY" => "source-proof-max-1"
+      })
+
+    [artifact] = result["artifacts"]
+
+    assert artifact["publisher_policy"] == "source-proof-max-1"
+    assert artifact["candidate_count"] == 2
+    assert artifact["validated_count"] == 1
+    assert length(result["claims"]) == 1
+
+    assert Enum.any?(
+             artifact["validation_stage"],
+             &(&1["publisher"]["reason"] == "comment_budget")
+           )
+  end
+
   test "dedupe v5 suppresses theme color migration duplicates across selectors" do
     workspace = tmp_dir("staged-proof-theme-duplicate-workspace")
 

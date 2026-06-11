@@ -2,6 +2,8 @@
 
 Open, BYOK code review.
 
+See [docs/product-principles.md](docs/product-principles.md) for the product and research principles that guide what Sugary optimizes for.
+
 See [docs/vision.md](docs/vision.md) for the product vision, system design, and initial implementation plan.
 
 See [docs/pcrs.md](docs/pcrs.md) for the Proof-Carrying Review Search thesis.
@@ -37,6 +39,8 @@ See [docs/repo-materialization.md](docs/repo-materialization.md) for materializi
 See [docs/sparse-repo-context.md](docs/sparse-repo-context.md) for sparse benchmark-agnostic repo context when full checkout is too expensive.
 
 See [docs/scientific-pilot.md](docs/scientific-pilot.md) for paired candidate-vs-baseline pilots with bootstrap intervals and sample-size gates.
+
+See [docs/staged-publisher-replay.md](docs/staged-publisher-replay.md) for fixed-pool PCRS publisher ablations over staged validation artifacts.
 
 See [docs/research-log.md](docs/research-log.md) for local research checkpoints and transfer-smoke results.
 
@@ -78,6 +82,7 @@ elixir scripts/benchmarks/fetch_martian_diffs.exs --limit 3
 ./sugary repo sparse-context --suite aacr-bench --limit 50
 ./sugary scientific pilot --experiment experiments/public-martian-pcrs-transfer-v1.toml --candidate public-pcrs-static-codex-low-team --baseline codex-gpt-5.5-low --baseline codex-gpt-5.5-xhigh --limit 100 --replay-mode cache-first --min-cases 100
 ./sugary bench compare --run .sugary/research/runs/<local-run> --run .sugary/research/public-smoke/<public-run>
+./sugary pcrs staged replay --source-run .sugary/research/runs/<run-id> --method codex-gpt-5.5-low-staged-typed-proof-v8 --baseline codex-gpt-5.5-low-no-tools --suite martian-offline --limit 10
 ```
 
 Every experiment writes `research-scorecard.json` and `research-scorecard.md` under its run directory. Use those artifacts to choose the next small ablation before adding new model providers or product surfaces.
