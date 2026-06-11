@@ -2663,3 +2663,131 @@ Next research implication:
   - keep publisher policy fixed at `source-proof-max-1` or `source-proof-max-2`
   - live-check on the same dev10, then a locked adjacent slice
 - Add per-case progress logging before scaling live experiments to 25+ cases.
+
+## 2026-06-11: Human-Substrate PCRS Gauntlet on Materialized Martian dev18
+
+Question:
+
+```text
+Does giving reviewers a materialized repo checkout, and wrapping Codex in a
+proof/refutation protocol, beat diff-only Codex and repo-aware raw Codex on
+the same unofficial Martian dev slice?
+```
+
+Setup:
+
+```text
+materialization:
+  .sugary/research/repo-materializations/20260611T042452Z-human-substrate-dev18-materialization
+
+gauntlet:
+  gauntlets/martian-materialized-dev18-pcrs-v1.toml
+
+run:
+  .sugary/research/architecture-gauntlets/20260611T042644Z-martian-materialized-dev18-pcrs-v1
+
+underlying experiment:
+  .sugary/research/runs/20260611T042644Z-martian-materialized-dev18-pcrs-v1-experiment
+```
+
+Materialization result:
+
+```text
+cases: 18
+workspace_ready: 18
+exact_diff_parity: 18
+tool_ready_cases: 18
+repos: discourse, sentry, keycloak, cal.com
+```
+
+Variable results:
+
+| Method | F1 | Recall | Usefulness | SNR | Hits | Noise | Published | Avg comments | Latency ms | Decision |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `native-codex-diff-low` | 0.256 | 0.175 | 0.476 | 0.909 | 10 | 11 | 21 | 1.167 | 311,118 | reference |
+| `native-codex-repo-low` | 0.286 | 0.193 | 0.550 | 1.222 | 11 | 9 | 20 | 1.111 | 838,962 | reference |
+| `public-static-proof-gate` | 0.269 | 0.158 | 0.900 | 9.000 | 9 | 1 | 10 | 0.556 | 13 | quarantine |
+| `pcrs-codex-proof-low` | 0.333 | 0.246 | 0.519 | 1.077 | 14 | 13 | 27 | 1.500 | 337,538 | quarantine |
+| `pcrs-codex-repo-low` | 0.278 | 0.193 | 0.500 | 1.000 | 11 | 11 | 22 | 1.222 | 1,223,050 | quarantine |
+
+Decision:
+
+```text
+Quarantine promising ingredients. Do not promote.
+```
+
+What worked:
+
+- Full repo materialization worked across all 18 cases with exact diff parity.
+- Repo-aware raw Codex improved over diff-only Codex:
+  - F1: 0.256 -> 0.286
+  - hits: 10 -> 11
+  - noise: 11 -> 9
+  - SNR: 0.909 -> 1.222
+- PCRS proof/refutation over the diff produced the best F1 and recall:
+  - F1: 0.333
+  - recall: 0.246
+  - hits: 14
+  - unique hits over repo-aware Codex: 6
+- The deterministic static proof gate remained the best precision ingredient:
+  - usefulness: 0.900
+  - SNR: 9.000
+  - noise: 1
+
+What failed:
+
+- `pcrs-codex-proof-low` beat references on F1 but failed quality guardrails:
+  - usefulness below 0.60
+  - SNR below 1.50
+  - added noise over repo-aware Codex
+- `pcrs-codex-repo-low` did not beat repo-aware raw Codex:
+  - F1: 0.278 vs 0.286
+  - noise: 11 vs 9
+  - SNR: 1.000 vs 1.222
+  - latency: 1,223s vs 839s
+- Repo-backed PCRS had four inner reviewer failures:
+  - two `codex_timeout`
+  - two `codex_non_zero_exit`
+- False positives are still mostly speculative edge cases and duplicates.
+
+Research scorecard signal:
+
+```text
+best method by research utility: public-static-proof-gate
+best method by recall: pcrs-codex-proof-low
+recommended next ablation: team_or_hybrid_composition
+```
+
+Rank and evidence-tier signal:
+
+- `pcrs-codex-proof-low` rank-1 comments were positive:
+  - 14 comments, 9 hits, 5 noise
+- `pcrs-codex-proof-low` rank 2+ comments were negative:
+  - 13 comments, 5 hits, 8 noise
+- Static/tier-3 proof claims were much stronger than tier-4 plausibility claims:
+  - `pcrs-codex-proof-low` tier-3: 4 comments, 4 hits, 0 noise
+  - `pcrs-codex-proof-low` tier-4: 23 comments, 10 hits, 13 noise
+
+Interpretation:
+
+- PCRS is still the right direction, but the current proof gate is not strict enough.
+- Full repo access is useful for raw Codex, but naive repo-backed PCRS is slower and less stable.
+- The highest-value next move is not more tools. It is a stricter proof-type publisher that strongly prefers tier-3/static proof claims, suppresses tier-4 plausibility by default, and caps publication around rank 1 unless evidence is unusually strong.
+- Repo substrate should be retained as an evidence source, not promoted as the default architecture yet.
+
+Next research implication:
+
+- Build a hybrid publisher/composition gauntlet over the completed dev18 artifacts before another live run.
+- Candidate policy:
+  - union `public-static-proof-gate` with `pcrs-codex-proof-low`
+  - dedupe by root cause
+  - prefer static/tier-3 proof
+  - allow at most one tier-4 LLM claim per PR only when confidence and introducedness are high
+  - hard-suppress duplicate root causes
+- Target for promotion on this dev18 slice:
+  - beat `native-codex-repo-low` F1 0.286
+  - SNR >= 1.5
+  - usefulness >= 0.60
+  - no more than 9 noise
+  - avg comments <= 1.1
+  - at least one unique hit over `native-codex-repo-low`
