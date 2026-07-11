@@ -1,5 +1,95 @@
 # Research Log
 
+## 2026-07-10: Product Goal, Incumbent Audit, And Online Publisher Baseline
+
+Question:
+
+```text
+What is Sugary's deployable PCRS incumbent, and can proof-aware tie-breaking or
+posterior threshold calibration improve it without sacrificing the precision
+required by the product goal?
+```
+
+Product contract added:
+
+- Target greater than 70% F1 over thousands of diverse real PRs.
+- Review F1 is necessary but insufficient: product promotion must also preserve
+  final-patch correctness, repair safety, latency, cost, and human interruption.
+- Product policies must decide from the current PR alone.
+- Cross-PR global-budget policies are offline diagnostics, not deployable
+  product incumbents.
+
+Fixed-pool source:
+
+```text
+.sugary/research/pcrs-ensemble-publisher/
+20260711T031110Z-online-threshold-calibration-v2
+```
+
+Incumbent ladder:
+
+| Operating point | F1 | Precision | Recall | SNR | Hits | Noise | Avg comments |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Trust default | 0.466 | 0.846 | 0.321 | 5.500 | 44 | 8 | 1.04 |
+| Online product (`online-qualified-max2-t70`) | 0.516 | 0.724 | 0.401 | 2.619 | 55 | 21 | 1.52 |
+| Offline global-budget qualified F1 | 0.552 | 0.726 | 0.445 | 2.652 | 61 | 23 | 1.68 |
+| Recall diagnostic | 0.595 | 0.566 | 0.628 | 1.303 | 86 | 66 | 3.04 |
+
+Candidate-pool ceiling:
+
+```text
+raw claims: 1,184
+merged candidates: 340
+pool hits: 101 / 137
+oracle recall: 0.737
+expected claims absent from every source: 36
+```
+
+Proof tie-break ablation:
+
+```text
+incumbent:             F1 0.552 / precision 0.726 / 61 hits / 23 noise
+proof-aware tie-break: F1 0.552 / precision 0.726 / 61 hits / 23 noise
+tie-break + no-low:    F1 0.543 / precision 0.714 / 60 hits / 24 noise
+```
+
+Decision: reject both tie-break variants. Evidence-tier ordering did not change
+the selected set, and suppressing reviewer-labelled low/style claims removed
+useful findings without reducing net noise.
+
+Online threshold calibration:
+
+| Policy | F1 | Precision | Recall | Published |
+| --- | ---: | ---: | ---: | ---: |
+| max2 t0.60 | 0.552 | 0.674 | 0.467 | 95 |
+| max2 t0.68 | 0.514 | 0.691 | 0.409 | 81 |
+| max2 t0.69 | 0.514 | 0.714 | 0.401 | 77 |
+| max2 t0.70 | 0.516 | 0.724 | 0.401 | 76 |
+| max2 t0.72 | 0.505 | 0.726 | 0.387 | 73 |
+| max1 t0.55 | 0.439 | 0.820 | 0.299 | 50 |
+
+Decision:
+
+```text
+Lock online-qualified-max2-t70 as the deployable dev incumbent.
+Do not claim holdout or official benchmark performance.
+Do not treat the 0.552 global-budget policy as deployable.
+```
+
+Interpretation:
+
+- The current pool contains enough signal to approach the target recall, but
+  the publisher cannot spend that signal while maintaining product precision.
+- Lowering the threshold recovers true positives, but admits false positives at
+  nearly the same rate.
+- Posterior saturation and eleven calibration-error false positives indicate
+  that source agreement is being mistaken for independent proof.
+- The next high-conviction variable is claim-specific evidence construction and
+  refutation on the uncertain second-comment band, measured against the locked
+  online incumbent on fixed replay before a fresh live slice.
+- The future MVP scorecard must add repair success, harmful-repair rate, residual
+  defects, and human-escalation correctness.
+
 This log records local research checkpoints. Results here are not product claims, official benchmark submissions, or public leaderboard scores.
 
 ## 2026-05-25: First Martian Public-Transfer Smoke

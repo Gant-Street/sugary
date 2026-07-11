@@ -73,8 +73,6 @@ defmodule Sugary.PCRSEnsemblePublisherTest do
   end
 
   test "runs ensemble publisher and includes the no-triad consensus policy" do
-    File.rm_rf(".sugary/research/pcrs-ensemble-publisher")
-
     bench_dir =
       Path.join(
         System.tmp_dir!(),
@@ -91,6 +89,12 @@ defmodule Sugary.PCRSEnsemblePublisherTest do
       Path.join(
         System.tmp_dir!(),
         "sugary-pcrs-ensemble-candidate-#{System.unique_integer([:positive])}"
+      )
+
+    output_root =
+      Path.join(
+        System.tmp_dir!(),
+        "sugary-pcrs-ensemble-output-#{System.unique_integer([:positive])}"
       )
 
     File.mkdir_p!(bench_dir)
@@ -126,7 +130,7 @@ defmodule Sugary.PCRSEnsemblePublisherTest do
       File.rm_rf(bench_dir)
       File.rm_rf(baseline_run)
       File.rm_rf(candidate_run)
-      File.rm_rf(".sugary/research/pcrs-ensemble-publisher")
+      File.rm_rf(output_root)
     end)
 
     with_env("MARTIAN_BENCH_DIR", bench_dir, fn ->
@@ -134,6 +138,7 @@ defmodule Sugary.PCRSEnsemblePublisherTest do
         Sugary.PCRSEnsemblePublisher.run!(
           baseline_run: baseline_run,
           candidate_run: candidate_run,
+          output_root: output_root,
           limit: 1,
           id: "pcrs-ensemble-publisher-test"
         )
@@ -164,12 +169,15 @@ defmodule Sugary.PCRSEnsemblePublisherTest do
                policies,
                &(&1["id"] == "qualified-f1-trust-plus-tail-team-xhigh-budget78")
              )
+
+      online = Enum.find(policies, &(&1["id"] == "online-qualified-max2-t70"))
+      assert online["score"]["hits"] == 1
+      assert online["score"]["noise"] == 0
+      refute Map.has_key?(online["policy"], "total_budget")
     end)
   end
 
   test "CLI exposes the PCRS ensemble publisher command" do
-    File.rm_rf(".sugary/research/pcrs-ensemble-publisher")
-
     bench_dir =
       Path.join(
         System.tmp_dir!(),
@@ -188,6 +196,12 @@ defmodule Sugary.PCRSEnsemblePublisherTest do
         "sugary-pcrs-ensemble-cli-candidate-#{System.unique_integer([:positive])}"
       )
 
+    output_root =
+      Path.join(
+        System.tmp_dir!(),
+        "sugary-pcrs-ensemble-cli-output-#{System.unique_integer([:positive])}"
+      )
+
     File.mkdir_p!(bench_dir)
     write_case(bench_dir)
 
@@ -199,7 +213,7 @@ defmodule Sugary.PCRSEnsemblePublisherTest do
       File.rm_rf(bench_dir)
       File.rm_rf(baseline_run)
       File.rm_rf(candidate_run)
-      File.rm_rf(".sugary/research/pcrs-ensemble-publisher")
+      File.rm_rf(output_root)
     end)
 
     with_env("MARTIAN_BENCH_DIR", bench_dir, fn ->
@@ -213,6 +227,8 @@ defmodule Sugary.PCRSEnsemblePublisherTest do
             baseline_run,
             "--candidate-run",
             candidate_run,
+            "--output-root",
+            output_root,
             "--limit",
             "1",
             "--id",
@@ -220,7 +236,7 @@ defmodule Sugary.PCRSEnsemblePublisherTest do
           ])
         end)
 
-      assert output =~ ".sugary/research/pcrs-ensemble-publisher/"
+      assert output =~ output_root
     end)
   end
 end

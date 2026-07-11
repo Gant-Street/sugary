@@ -2,6 +2,9 @@
 
 Open, BYOK code review.
 
+See [docs/product-goal.md](docs/product-goal.md) for the product promise, success
+contract, and the long-term >70% F1 target.
+
 See [docs/product-principles.md](docs/product-principles.md) for the product and research principles that guide what Sugary optimizes for.
 
 See [docs/vision.md](docs/vision.md) for the product vision, system design, and initial implementation plan.
@@ -83,9 +86,10 @@ elixir scripts/benchmarks/fetch_martian_diffs.exs --limit 3
 ./sugary scientific pilot --experiment experiments/public-martian-pcrs-transfer-v1.toml --candidate public-pcrs-static-codex-low-team --baseline codex-gpt-5.5-low --baseline codex-gpt-5.5-xhigh --limit 100 --replay-mode cache-first --min-cases 100
 ./sugary bench compare --run .sugary/research/runs/<local-run> --run .sugary/research/public-smoke/<public-run>
 ./sugary pcrs staged replay --source-run .sugary/research/runs/<run-id> --method codex-gpt-5.5-low-staged-typed-proof-v8 --baseline codex-gpt-5.5-low-no-tools --suite martian-offline --limit 10
+./sugary incumbent report --source-run .sugary/research/pcrs-ensemble-publisher/<run-id> --target-f1 0.70
 ```
 
-Every experiment writes `research-scorecard.json` and `research-scorecard.md` under its run directory. Use those artifacts to choose the next small ablation before adding new model providers or product surfaces.
+Every experiment writes `research-scorecard.json` and `research-scorecard.md` under its run directory. Use those artifacts to choose the next controlled ablation before adding new model providers or product surfaces. Product promotion requires a per-PR policy; cross-PR global-budget policies are diagnostic only.
 
 Public benchmark smoke runs are local-only and unofficial. Set `MARTIAN_BENCH_DIR` or `CR_BENCH_DIR`, or place datasets at `.sugary/research/benchmarks/martian-offline` and `.sugary/research/benchmarks/cr-bench`, then run:
 

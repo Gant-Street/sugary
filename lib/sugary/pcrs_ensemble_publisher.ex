@@ -341,6 +341,140 @@ defmodule Sugary.PCRSEnsemblePublisher do
         "Use tail verification as the judge-risk gate, then spend a fixed global budget on the highest posterior candidates instead of using a hard posterior threshold that suppresses local true positives."
     },
     %{
+      id: "online-qualified-max1-t55",
+      mode: "online_qualified_f1",
+      strategy: "per_pr_posterior",
+      threshold: 0.55,
+      max_per_pr: 1,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      hypothesis:
+        "Deployable high-precision posture: publish the best independently qualified claim for each PR."
+    },
+    %{
+      id: "online-qualified-max2-t70",
+      mode: "online_qualified_f1",
+      strategy: "per_pr_posterior",
+      threshold: 0.70,
+      max_per_pr: 2,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      hypothesis:
+        "Deployable balanced posture using only information available within the current PR."
+    },
+    %{
+      id: "online-qualified-max2-t55",
+      mode: "online_qualified_f1",
+      strategy: "per_pr_posterior",
+      threshold: 0.55,
+      max_per_pr: 2,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      hypothesis: "Online threshold calibration at posterior 0.55."
+    },
+    %{
+      id: "online-qualified-max2-t60",
+      mode: "online_qualified_f1",
+      strategy: "per_pr_posterior",
+      threshold: 0.60,
+      max_per_pr: 2,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      hypothesis: "Online threshold calibration at posterior 0.60."
+    },
+    %{
+      id: "online-qualified-max2-t65",
+      mode: "online_qualified_f1",
+      strategy: "per_pr_posterior",
+      threshold: 0.65,
+      max_per_pr: 2,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      hypothesis: "Online threshold calibration at posterior 0.65."
+    },
+    %{
+      id: "online-qualified-max2-t68",
+      mode: "online_qualified_f1",
+      strategy: "per_pr_posterior",
+      threshold: 0.68,
+      max_per_pr: 2,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      hypothesis: "Online threshold calibration at posterior 0.68."
+    },
+    %{
+      id: "online-qualified-max2-t69",
+      mode: "online_qualified_f1",
+      strategy: "per_pr_posterior",
+      threshold: 0.69,
+      max_per_pr: 2,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      hypothesis: "Online threshold calibration at posterior 0.69."
+    },
+    %{
+      id: "online-qualified-max2-t72",
+      mode: "online_qualified_f1",
+      strategy: "per_pr_posterior",
+      threshold: 0.72,
+      max_per_pr: 2,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      hypothesis: "Online threshold calibration at posterior 0.72."
+    },
+    %{
+      id: "online-qualified-max2-t74",
+      mode: "online_qualified_f1",
+      strategy: "per_pr_posterior",
+      threshold: 0.74,
+      max_per_pr: 2,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      hypothesis: "Online threshold calibration at posterior 0.74."
+    },
+    %{
+      id: "online-qualified-max2-t76",
+      mode: "online_qualified_f1",
+      strategy: "per_pr_posterior",
+      threshold: 0.76,
+      max_per_pr: 2,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      hypothesis: "Online threshold calibration at posterior 0.76."
+    },
+    %{
+      id: "online-qualified-max2-t78",
+      mode: "online_qualified_f1",
+      strategy: "per_pr_posterior",
+      threshold: 0.78,
+      max_per_pr: 2,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      hypothesis: "Online threshold calibration at posterior 0.78."
+    },
+    %{
+      id: "online-qualified-max2-t80",
+      mode: "online_qualified_f1",
+      strategy: "per_pr_posterior",
+      threshold: 0.80,
+      max_per_pr: 2,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      hypothesis:
+        "Deployable balanced posture with a stricter independently calibrated posterior floor."
+    },
+    %{
+      id: "online-qualified-max3-t80",
+      mode: "online_qualified_f1",
+      strategy: "per_pr_posterior",
+      threshold: 0.80,
+      max_per_pr: 3,
+      near_duplicate_jaccard: 0.12,
+      require_tail_verification: true,
+      hypothesis:
+        "Deployable recall posture with a strict posterior floor and at most three comments per PR."
+    },
+    %{
       id: "qualified-f1-trust-plus-tail-diverse-budget80",
       mode: "qualified_f1",
       budget_tier: 80,
@@ -487,10 +621,11 @@ defmodule Sugary.PCRSEnsemblePublisher do
     id = Keyword.get(opts, :id, "pcrs-ensemble-publisher-v0")
     baseline_run = Keyword.get(opts, :baseline_run, @default_baseline_run)
     candidate_run = Keyword.get(opts, :candidate_run, @default_candidate_run)
+    output_root = Keyword.get(opts, :output_root, @root)
     extra_sources = opts |> Keyword.get(:extra_sources, []) |> List.wrap()
     sources = sources(baseline_run, candidate_run) ++ Enum.map(extra_sources, &normalize_source/1)
     cases = Sugary.PublicBenchmarks.load_cases!(suite, limit: limit, offset: offset)
-    out_dir = make_out_dir(id)
+    out_dir = make_out_dir(output_root, id)
 
     File.rm_rf!(out_dir)
     File.mkdir_p!(out_dir)
@@ -933,8 +1068,14 @@ defmodule Sugary.PCRSEnsemblePublisher do
   end
 
   defp theoretical_max_f1(policy, expected_total) do
-    budget = min(Map.get(policy, :total_budget, 0), expected_total)
-    ratio(2 * budget, expected_total + budget)
+    case Map.get(policy, :total_budget) do
+      budget when is_integer(budget) ->
+        budget = min(budget, expected_total)
+        ratio(2 * budget, expected_total + budget)
+
+      _ ->
+        nil
+    end
   end
 
   defp policy_case_result(case_pool, policy, selected) do
@@ -972,6 +1113,7 @@ defmodule Sugary.PCRSEnsemblePublisher do
     case Map.get(policy, :strategy) do
       "trust_plus_tail" -> trust_plus_tail_selected_candidate_ids(case_pools, policy)
       "deduped_posterior" -> deduped_posterior_selected_candidate_ids(case_pools, policy)
+      "per_pr_posterior" -> per_pr_posterior_selected_candidate_ids(case_pools, policy)
       _ -> posterior_selected_candidate_ids(case_pools, policy)
     end
   end
@@ -1084,6 +1226,30 @@ defmodule Sugary.PCRSEnsemblePublisher do
     |> MapSet.new()
   end
 
+  defp per_pr_posterior_selected_candidate_ids(case_pools, policy) do
+    case_pools
+    |> Enum.flat_map(fn case_pool ->
+      case_pool.candidates
+      |> Enum.filter(&allowed_by_policy?(&1, policy))
+      |> Enum.filter(&(policy_posterior(&1, policy) >= policy.threshold))
+      |> Enum.sort_by(&policy_posterior(&1, policy), :desc)
+      |> Enum.reduce([], fn candidate, selected ->
+        cond do
+          length(selected) >= policy.max_per_pr ->
+            selected
+
+          near_duplicate?(candidate, selected, Map.get(policy, :near_duplicate_jaccard, 0.18)) ->
+            selected
+
+          true ->
+            [Map.put(candidate, :case_id, case_pool.case.id) | selected]
+        end
+      end)
+    end)
+    |> Enum.map(& &1.id)
+    |> MapSet.new()
+  end
+
   defp base_policy!(policy) do
     base_id = Map.fetch!(policy, :base_policy_id)
 
@@ -1119,7 +1285,8 @@ defmodule Sugary.PCRSEnsemblePublisher do
     |> Enum.sort_by(&supplemental_score(&1, policy), :desc)
   end
 
-  defp policy_case_candidates(candidates, %{strategy: "deduped_posterior"} = policy) do
+  defp policy_case_candidates(candidates, %{strategy: strategy} = policy)
+       when strategy in ["deduped_posterior", "per_pr_posterior"] do
     candidates
     |> Enum.filter(&allowed_by_policy?(&1, policy))
     |> Enum.filter(&(policy_posterior(&1, policy) >= policy.threshold))
@@ -1330,7 +1497,7 @@ defmodule Sugary.PCRSEnsemblePublisher do
       |> MapSet.new()
 
     %{
-      budget: policy.total_budget,
+      budget: Map.get(policy, :total_budget, "per_pr"),
       selected: MapSet.size(selected),
       hits: MapSet.size(hit_ids),
       recall: ratio(MapSet.size(hit_ids), @expected_claims)
@@ -1474,6 +1641,9 @@ defmodule Sugary.PCRSEnsemblePublisher do
 
     budget_tiers =
       policy_reports
+      |> Enum.filter(fn report ->
+        is_number(Map.get(report.policy, :budget_tier) || Map.get(report.policy, :total_budget))
+      end)
       |> Enum.group_by(&(Map.get(&1.policy, :budget_tier) || Map.get(&1.policy, :total_budget)))
       |> Enum.map(fn {budget, reports} ->
         best = Enum.max_by(reports, & &1.score.f1)
@@ -1515,7 +1685,10 @@ defmodule Sugary.PCRSEnsemblePublisher do
   defp best_product_default(policy_reports, v0) do
     policy_reports
     |> Enum.reject(&diagnostic?/1)
-    |> Enum.filter(&(Map.get(&1.policy, :budget_tier, Map.get(&1.policy, :total_budget)) <= 52))
+    |> Enum.filter(fn report ->
+      budget = Map.get(report.policy, :budget_tier, Map.get(report.policy, :total_budget))
+      is_number(budget) and budget <= 52
+    end)
     |> Enum.filter(fn report ->
       is_nil(v0) or (report.score.f1 >= v0.score.f1 and uaf1(report.score) >= uaf1(v0.score))
     end)
@@ -1525,7 +1698,10 @@ defmodule Sugary.PCRSEnsemblePublisher do
   defp best_leaderboard(policy_reports, v0) do
     policy_reports
     |> Enum.reject(&diagnostic?/1)
-    |> Enum.filter(&(Map.get(&1.policy, :budget_tier, Map.get(&1.policy, :total_budget)) > 52))
+    |> Enum.filter(fn report ->
+      budget = Map.get(report.policy, :budget_tier, Map.get(report.policy, :total_budget))
+      is_number(budget) and budget > 52
+    end)
     |> Enum.filter(&(&1.score.precision >= 0.70))
     |> Enum.filter(fn report -> is_nil(v0) or report.score.f1 >= v0.score.f1 + 0.02 end)
     |> Enum.max_by(&{&1.score.f1, uaf1(&1.score), &1.score.hits, -&1.score.noise}, fn -> nil end)
@@ -2665,8 +2841,8 @@ defmodule Sugary.PCRSEnsemblePublisher do
   defp fmt(value) when is_float(value), do: :erlang.float_to_binary(value, decimals: 3)
   defp fmt(value), do: to_string(value)
 
-  defp make_out_dir(id) do
+  defp make_out_dir(root, id) do
     timestamp = DateTime.utc_now() |> Calendar.strftime("%Y%m%dT%H%M%SZ")
-    Path.join(@root, "#{timestamp}-#{id}")
+    Path.join(root, "#{timestamp}-#{id}")
   end
 end
