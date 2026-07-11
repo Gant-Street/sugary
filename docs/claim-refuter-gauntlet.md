@@ -27,6 +27,12 @@ The refuter returns one structured verdict:
 - `refute`: repository evidence defeats the claim or its introducedness;
 - `abstain`: neither side is established.
 
+With `--refuter-mode novelty_gate`, each second comment also receives the
+already-selected first finding for that PR. The refuter may return `duplicate`
+when both findings share the same root cause, failure path, or required repair.
+This mode defaults to the actual after-first comment band rather than comparing
+two independently ranked policy sets.
+
 Every verdict records confidence, proof type, commands, paths, observations, the
 strongest counterargument, and residual uncertainty. Results use the command
 reviewer replay cache.
@@ -62,6 +68,11 @@ essential-hit harm rate.
 ```
 
 Use `replay-only` to rescore a completed run without calling Codex.
+
+Reviewer failures are score-neutral and invalidate a completed gauntlet. They
+must never be interpreted as model abstentions. Codex runs with user config,
+plugins, MCP servers, and repository instructions disabled; only authentication
+and the explicitly selected model remain available.
 
 This is an unofficial local research instrument. A fixed-pool win only
 qualifies a policy for a fresh locked slice; it is not a product promotion or

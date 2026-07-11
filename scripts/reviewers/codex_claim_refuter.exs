@@ -7,6 +7,7 @@ if Map.has_key?(bundle, "oracle") or String.contains?(input, "expectedClaims") o
 end
 
 method_id = System.get_env("SUGARY_REVIEWER_ID") || "codex-claim-refuter"
+mode = System.get_env("SUGARY_CLAIM_REFUTER_MODE") || "single_claim"
 model = System.get_env("SUGARY_CODEX_MODEL") || "gpt-5.5"
 reasoning_effort = System.get_env("SUGARY_CODEX_REASONING_EFFORT") || "low"
 timeout_ms = String.to_integer(System.get_env("SUGARY_CODEX_INNER_TIMEOUT_MS") || "180000")
@@ -14,6 +15,7 @@ codex = System.get_env("SUGARY_CODEX_BIN") || "codex"
 
 workspace = get_in(bundle, ["metadata", "workspace"]) || %{}
 candidate = get_in(bundle, ["metadata", "candidate_claim"]) || %{}
+existing_claims = get_in(bundle, ["metadata", "existing_claims"]) || []
 head = Map.get(workspace, "head") |> Path.expand()
 base_sha = Map.get(workspace, "base_sha", "unknown")
 head_sha = Map.get(workspace, "head_sha", "unknown")
@@ -37,7 +39,14 @@ schema = %{
     "residual_uncertainty"
   ],
   properties: %{
-    verdict: %{type: "string", enum: ["support", "refute", "abstain"]},
+    verdict: %{
+      type: "string",
+      enum:
+        if(mode == "novelty_gate",
+          do: ["support", "refute", "duplicate", "abstain"],
+          else: ["support", "refute", "abstain"]
+        )
+    },
     confidence: %{type: "number", minimum: 0, maximum: 1},
     introduced_by_pr: %{type: ["boolean", "null"]},
     proof_type: %{
@@ -73,6 +82,22 @@ output_path = Path.join(tmp, "sugary-claim-refuter-output-#{nonce}.json")
 request_path = Path.join(tmp, "sugary-claim-refuter-request-#{nonce}.json")
 File.write!(schema_path, :json.encode(schema))
 
+novelty_instructions =
+  if mode == "novelty_gate" do
+    """
+    This candidate would be an additional comment on a PR that already has the
+    findings below. Return `duplicate` when the candidate describes the same root
+    cause, failure path, or required repair as an existing finding, even when the
+    candidate is technically true. Return `support` only for a distinct,
+    consequential defect.
+
+    Existing published findings JSON:
+    #{:json.encode(existing_claims)}
+    """
+  else
+    ""
+  end
+
 prompt = """
 You are the defense attorney in a proof-carrying code review system. Evaluate
 exactly one proposed defect claim. Your job is to find the truth, with a strong
@@ -88,6 +113,8 @@ Return:
 - support only when concrete repository evidence establishes an introduced,
   consequential failure path;
 - refute when concrete evidence defeats the claim or shows it is not introduced;
+- duplicate when novelty-gate instructions apply and an existing finding already
+  covers the same root cause or repair;
 - abstain when neither side can be established.
 
 Independent model agreement is not proof. The proposed confidence, source count,
@@ -95,6 +122,8 @@ and wording are not evidence. Cite exact commands and paths. Do not invent outpu
 
 Proposed claim JSON:
 #{:json.encode(candidate)}
+
+#{novelty_instructions}
 """
 
 args = [
@@ -104,6 +133,7 @@ args = [
   "--sandbox",
   "read-only",
   "--skip-git-repo-check",
+  "--ignore-user-config",
   "--ignore-rules",
   "--ephemeral",
   "-m",
@@ -157,6 +187,31 @@ duration_ms = System.monotonic_time(:millisecond) - started
 status = Map.get(runner_result, "exit_status", 1)
 timed_out = Map.get(runner_result, "timed_out", false)
 
+inner_diagnostics =
+  (Map.get(runner_result, "stderr", "") <> "\n" <> Map.get(runner_result, "stdout", ""))
+  |> String.downcase()
+
+inner_failure_reason =
+  cond do
+    timed_out ->
+      "codex_timeout"
+
+    String.contains?(inner_diagnostics, ["usage limit", "usage_limit", "limit reached"]) ->
+      "codex_usage_limit"
+
+    String.contains?(inner_diagnostics, ["rate limit", "rate_limit", "too many requests"]) ->
+      "codex_rate_limit"
+
+    String.contains?(inner_diagnostics, ["output schema", "json schema", "invalid schema"]) ->
+      "codex_schema_error"
+
+    status != 0 ->
+      "codex_non_zero_exit"
+
+    true ->
+      nil
+  end
+
 verdict =
   cond do
     status == 0 and File.exists?(output_path) ->
@@ -174,8 +229,8 @@ File.rm(output_path)
 
 errors =
   cond do
-    timed_out -> [%{reason: "codex_timeout"}]
-    status != 0 -> [%{reason: "codex_non_zero_exit", status: status}]
+    timed_out -> [%{reason: inner_failure_reason}]
+    status != 0 -> [%{reason: inner_failure_reason, status: status}]
     is_nil(verdict) -> [%{reason: "codex_invalid_verdict"}]
     true -> []
   end
@@ -205,10 +260,13 @@ IO.write(
     artifacts: [
       Map.merge(artifact, %{
         adapter: "codex_claim_refuter",
+        refuter_mode: mode,
         model: model,
         reasoning_effort: reasoning_effort,
         base_sha: base_sha,
-        head_sha: head_sha
+        head_sha: head_sha,
+        inner_exit_status: status,
+        inner_failure_reason: inner_failure_reason
       })
     ],
     errors: errors

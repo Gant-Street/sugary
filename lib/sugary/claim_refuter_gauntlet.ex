@@ -28,12 +28,21 @@ defmodule Sugary.ClaimRefuterGauntlet do
     replay_mode = Keyword.get(opts, :replay_mode, "cache-first")
     model = Keyword.get(opts, :model, "gpt-5.5")
     reasoning_effort = Keyword.get(opts, :reasoning_effort, "low")
+    refuter_mode = Keyword.get(opts, :refuter_mode, "single_claim")
+
+    band =
+      Keyword.get(
+        opts,
+        :band,
+        if(refuter_mode == "novelty_gate", do: "after_first", else: "policy_difference")
+      )
+
     id = Keyword.get(opts, :id, "claim-refuter-v0")
     output_root = Keyword.get(opts, :output_root, @root)
 
     cases = Sugary.PublicBenchmarks.load_cases!(suite, limit: limit, offset: offset)
     materializations = load_materializations!(materialization_run)
-    all_rows = marginal_rows(source_run, policy_id, base_policy_id, cases)
+    all_rows = marginal_rows(source_run, policy_id, base_policy_id, cases, band)
     selected_rows = all_rows |> Enum.drop(claim_offset) |> Enum.take(claim_limit)
     out_dir = make_out_dir(output_root, id)
     File.mkdir_p!(out_dir)
@@ -64,6 +73,8 @@ defmodule Sugary.ClaimRefuterGauntlet do
       replay_mode: replay_mode,
       model: model,
       reasoning_effort: reasoning_effort,
+      refuter_mode: refuter_mode,
+      band: band,
       oracle_exposed_to_refuter: false,
       official_score_claim: false
     }
@@ -80,7 +91,8 @@ defmodule Sugary.ClaimRefuterGauntlet do
             refute_claim(row, workspace,
               replay_mode: replay_mode,
               model: model,
-              reasoning_effort: reasoning_effort
+              reasoning_effort: reasoning_effort,
+              refuter_mode: refuter_mode
             )
 
           write_verdict!(out_dir, row, verdict)
@@ -127,7 +139,27 @@ defmodule Sugary.ClaimRefuterGauntlet do
     out_dir
   end
 
-  defp marginal_rows(source_run, policy_id, base_policy_id, cases) do
+  defp marginal_rows(source_run, policy_id, _base_policy_id, cases, "after_first") do
+    cases
+    |> Enum.flat_map(fn bench_case ->
+      full = published_claims(source_run, policy_id, bench_case.id)
+
+      full
+      |> Enum.with_index()
+      |> Enum.drop(1)
+      |> Enum.map(fn {claim, index} ->
+        %{
+          case: bench_case,
+          claim: claim,
+          source_run: source_run,
+          prior_claims: Enum.take(full, index)
+        }
+      end)
+    end)
+    |> with_positions()
+  end
+
+  defp marginal_rows(source_run, policy_id, base_policy_id, cases, _policy_difference) do
     cases
     |> Enum.flat_map(fn bench_case ->
       full = published_claims(source_run, policy_id, bench_case.id)
@@ -136,8 +168,20 @@ defmodule Sugary.ClaimRefuterGauntlet do
 
       full
       |> Enum.reject(&MapSet.member?(base_ids, &1["id"]))
-      |> Enum.map(&%{case: bench_case, claim: &1, source_run: source_run})
+      |> Enum.map(
+        &%{
+          case: bench_case,
+          claim: &1,
+          source_run: source_run,
+          prior_claims: base
+        }
+      )
     end)
+    |> with_positions()
+  end
+
+  defp with_positions(rows) do
+    rows
     |> Enum.with_index(1)
     |> Enum.map(fn {row, position} -> Map.put(row, :position, position) end)
   end
@@ -202,13 +246,14 @@ defmodule Sugary.ClaimRefuterGauntlet do
       method: %{id: "codex-claim-refuter"},
       metadata: %{
         candidate_claim: sanitize_claim(row.claim),
+        existing_claims: Enum.map(row.prior_claims, &sanitize_claim/1),
         workspace: workspace
       }
     }
 
     method = %{
       id:
-        "codex-claim-refuter-#{Keyword.fetch!(opts, :model)}-#{Keyword.fetch!(opts, :reasoning_effort)}",
+        "codex-claim-refuter-#{Keyword.fetch!(opts, :refuter_mode)}-#{Keyword.fetch!(opts, :model)}-#{Keyword.fetch!(opts, :reasoning_effort)}",
       type: "command",
       command: System.find_executable("elixir") || "elixir",
       args: ["scripts/reviewers/codex_claim_refuter.exs"],
@@ -219,6 +264,7 @@ defmodule Sugary.ClaimRefuterGauntlet do
       env: %{
         "SUGARY_CODEX_MODEL" => Keyword.fetch!(opts, :model),
         "SUGARY_CODEX_REASONING_EFFORT" => Keyword.fetch!(opts, :reasoning_effort),
+        "SUGARY_CLAIM_REFUTER_MODE" => Keyword.fetch!(opts, :refuter_mode),
         "SUGARY_CODEX_INNER_TIMEOUT_MS" => "180000"
       },
       replay_mode: Keyword.fetch!(opts, :replay_mode),
@@ -306,8 +352,10 @@ defmodule Sugary.ClaimRefuterGauntlet do
     %{policy_id: policy.id, policy: policy, score: score}
   end
 
+  defp keep?(%{errors: errors}, _policy) when errors != [], do: true
+
   defp keep?(verdict, %{mode: :refute_only, threshold: threshold}) do
-    not (verdict.verdict == "refute" and verdict.confidence >= threshold)
+    not (verdict.verdict in ["refute", "duplicate"] and verdict.confidence >= threshold)
   end
 
   defp keep?(verdict, %{mode: :support_only, threshold: threshold}) do
@@ -330,6 +378,7 @@ defmodule Sugary.ClaimRefuterGauntlet do
           neutral_refuted: 0,
           support: 0,
           refute: 0,
+          duplicate: 0,
           abstain: 0
         },
         fn row, acc ->
@@ -342,7 +391,7 @@ defmodule Sugary.ClaimRefuterGauntlet do
           |> Map.update!(class, &(&1 + 1))
           |> Map.update!(String.to_existing_atom(verdict.verdict), &(&1 + 1))
           |> then(fn counts ->
-            if verdict.verdict == "refute",
+            if verdict.verdict in ["refute", "duplicate"],
               do: Map.update!(counts, refuted_key, &(&1 + 1)),
               else: counts
           end)
@@ -400,8 +449,10 @@ defmodule Sugary.ClaimRefuterGauntlet do
 
     complete = selected == total
 
+    execution_valid = quality.reviewer_errors == 0
+
     qualifies =
-      complete and winner != nil and winner.score.f1 >= baseline["f1"] + 0.01 and
+      complete and execution_valid and winner != nil and winner.score.f1 >= baseline["f1"] + 0.01 and
         winner.score.recall >= baseline["recall"] - 0.02 and
         winner.score.noise < baseline["noise"] and
         quality.essential_hit_harm_rate <= 0.15
@@ -410,6 +461,7 @@ defmodule Sugary.ClaimRefuterGauntlet do
       decision:
         cond do
           not complete -> "pilot_only"
+          not execution_valid -> "invalid_due_to_reviewer_failures"
           qualifies -> "qualify_for_fresh_slice"
           true -> "reject_refuter_v0"
         end,
@@ -422,13 +474,15 @@ defmodule Sugary.ClaimRefuterGauntlet do
         precision: winner != nil and winner.score.precision >= baseline["precision"],
         recall: winner != nil and winner.score.recall >= baseline["recall"] - 0.02,
         noise: winner != nil and winner.score.noise < baseline["noise"],
-        harm: quality.essential_hit_harm_rate <= 0.15
+        harm: quality.essential_hit_harm_rate <= 0.15,
+        execution: execution_valid
       },
       next_step:
-        if(qualifies,
-          do: "Lock this policy and run it on a fresh PR slice.",
-          else: "Do not promote. Inspect refuter errors and verdict calibration."
-        )
+        cond do
+          not execution_valid -> "Rerun failed claims before evaluating the hypothesis."
+          qualifies -> "Lock this policy and run it on a fresh PR slice."
+          true -> "Do not promote. Inspect refuter errors and verdict calibration."
+        end
     }
   end
 
@@ -539,7 +593,7 @@ defmodule Sugary.ClaimRefuterGauntlet do
 
     - Evaluated: #{quality.evaluated}
     - Essential hits / removable noise / neutral: #{quality.essential_hit} / #{quality.removable_noise} / #{quality.neutral}
-    - Verdicts support / refute / abstain: #{quality.support} / #{quality.refute} / #{quality.abstain}
+    - Verdicts support / refute / duplicate / abstain: #{quality.support} / #{quality.refute} / #{quality.duplicate} / #{quality.abstain}
     - Removable-noise refutation rate: #{fmt(quality.removable_noise_refutation_rate)}
     - Essential-hit harm rate: #{fmt(quality.essential_hit_harm_rate)}
     - Average refuter latency: #{fmt(quality.avg_latency_ms / 1000)} seconds per claim

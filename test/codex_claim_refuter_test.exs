@@ -1,7 +1,7 @@
 defmodule Sugary.CodexClaimRefuterTest do
   use ExUnit.Case
 
-  test "returns a structured verdict from an isolated git worktree" do
+  setup do
     repo =
       Path.join(System.tmp_dir!(), "sugary-refuter-repo-#{System.unique_integer([:positive])}")
 
@@ -15,6 +15,31 @@ defmodule Sugary.CodexClaimRefuterTest do
     {sha, 0} = System.cmd("git", ["-C", repo, "rev-parse", "HEAD"])
     sha = String.trim(sha)
 
+    on_exit(fn -> File.rm_rf!(repo) end)
+    %{repo: repo, sha: sha}
+  end
+
+  test "returns a structured refutation from an isolated git worktree", context do
+    result = run_refuter(context, "single_claim")
+    verdict = result["artifacts"] |> hd()
+
+    assert result["errors"] == []
+    assert verdict["verdict"] == "refute"
+    assert verdict["confidence"] == 0.91
+    assert verdict["proof_type"] == "history"
+    assert hd(verdict["evidence"])["path"] == "src/example.ex"
+  end
+
+  test "returns a duplicate verdict when novelty mode is enabled", context do
+    result = run_refuter(context, "novelty_gate")
+    verdict = result["artifacts"] |> hd()
+
+    assert result["errors"] == []
+    assert verdict["verdict"] == "duplicate"
+    assert verdict["refuter_mode"] == "novelty_gate"
+  end
+
+  defp run_refuter(%{repo: repo, sha: sha}, mode) do
     fake_codex = Path.expand("test/fixtures/fake_codex_refuter.sh")
     script = Path.expand("scripts/reviewers/codex_claim_refuter.exs")
 
@@ -31,11 +56,10 @@ defmodule Sugary.CodexClaimRefuterTest do
           claim: "The changed behavior is preexisting.",
           path: "src/example.ex"
         },
+        existing_claims: [%{id: "existing-1", claim: "Existing finding."}],
         workspace: %{head: repo, base_sha: sha, head_sha: sha}
       }
     }
-
-    on_exit(fn -> File.rm_rf!(repo) end)
 
     request_path = Path.join(repo, "request.json")
 
@@ -46,7 +70,8 @@ defmodule Sugary.CodexClaimRefuterTest do
       env: %{
         "SUGARY_CODEX_BIN" => fake_codex,
         "SUGARY_CODEX_MODEL" => "fake-model",
-        "SUGARY_CODEX_REASONING_EFFORT" => "low"
+        "SUGARY_CODEX_REASONING_EFFORT" => "low",
+        "SUGARY_CLAIM_REFUTER_MODE" => mode
       },
       input: Sugary.Json.encode!(bundle),
       timeout_ms: 10_000,
@@ -61,13 +86,6 @@ defmodule Sugary.CodexClaimRefuterTest do
     assert runner_result["exit_status"] == 0
     stdout = runner_result["stdout"]
 
-    result = Sugary.Json.decode!(stdout)
-    verdict = result["artifacts"] |> hd()
-
-    assert result["errors"] == []
-    assert verdict["verdict"] == "refute"
-    assert verdict["confidence"] == 0.91
-    assert verdict["proof_type"] == "history"
-    assert hd(verdict["evidence"])["path"] == "src/example.ex"
+    Sugary.Json.decode!(stdout)
   end
 end

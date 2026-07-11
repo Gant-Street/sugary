@@ -89,6 +89,24 @@ Next implication:
   a marginal claim with already-selected findings from the same PR.
 - Preserve the 51.6% online incumbent.
 
+### Novelty gate execution checkpoint
+
+A follow-up novelty gate was started over the actual 30 after-first comments.
+It compares each candidate with the already-selected first finding and adds a
+`duplicate` verdict. The execution is incomplete and has no scientific decision:
+
+```text
+valid verdicts: 3
+reviewer failures: 27
+failure reason: Codex account usage limit
+reported retry time: 2026-07-11 00:00 local
+decision: invalid_due_to_reviewer_failures
+```
+
+Failed executions are now score-neutral, explicitly classified, and fatal to an
+experiment decision. The novelty hypothesis remains untested until every failed
+claim is rerun successfully under the frozen protocol.
+
 ## 2026-07-10: Product Goal, Incumbent Audit, And Online Publisher Baseline
 
 Question:
