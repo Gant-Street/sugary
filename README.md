@@ -45,6 +45,8 @@ See [docs/scientific-pilot.md](docs/scientific-pilot.md) for paired candidate-vs
 
 See [docs/staged-publisher-replay.md](docs/staged-publisher-replay.md) for fixed-pool PCRS publisher ablations over staged validation artifacts.
 
+See [docs/claim-refuter-gauntlet.md](docs/claim-refuter-gauntlet.md) for isolated, repository-backed claim refutation and scorer-aligned harm measurement.
+
 See [docs/research-log.md](docs/research-log.md) for local research checkpoints and transfer-smoke results.
 
 ## Autoresearch Lab
@@ -87,6 +89,7 @@ elixir scripts/benchmarks/fetch_martian_diffs.exs --limit 3
 ./sugary bench compare --run .sugary/research/runs/<local-run> --run .sugary/research/public-smoke/<public-run>
 ./sugary pcrs staged replay --source-run .sugary/research/runs/<run-id> --method codex-gpt-5.5-low-staged-typed-proof-v8 --baseline codex-gpt-5.5-low-no-tools --suite martian-offline --limit 10
 ./sugary incumbent report --source-run .sugary/research/pcrs-ensemble-publisher/<run-id> --target-f1 0.70
+./sugary pcrs claim refuter --source-run .sugary/research/pcrs-ensemble-publisher/<run-id> --materialization-run .sugary/research/repo-materializations/<run-id> --claim-limit 30 --replay-mode cache-first
 ```
 
 Every experiment writes `research-scorecard.json` and `research-scorecard.md` under its run directory. Use those artifacts to choose the next controlled ablation before adding new model providers or product surfaces. Product promotion requires a per-PR policy; cross-PR global-budget policies are diagnostic only.

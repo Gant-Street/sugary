@@ -1,5 +1,94 @@
 # Research Log
 
+## 2026-07-10: Repository-Backed Claim Refuter v0
+
+Question:
+
+```text
+Can an independent Codex defense-attorney pass remove noise from the frozen
+online second-comment band without suppressing unique true defects?
+```
+
+Setup:
+
+```text
+source publisher:
+  .sugary/research/pcrs-ensemble-publisher/
+  20260711T031110Z-online-threshold-calibration-v2
+
+materialization:
+  .sugary/research/repo-materializations/
+  20260530T032351Z-repo-materialization-v0
+
+rescored run:
+  .sugary/research/claim-refuter-gauntlets/
+  20260711T034633Z-claim-refuter-full-v0-rescored
+
+model: gpt-5.5 low
+candidate band: 30 claims published by online max2 but not online max1
+execution: 29 live, 1 replayed, 0 reviewer errors
+```
+
+Security and leakage boundary:
+
+- Every claim ran in an isolated detached target-repository worktree.
+- The refuter could inspect the head, base commit, callers, tests, and history.
+- Upward Git discovery into the Sugary repository was prevented.
+- The refuter received no oracle, known-non-issue, scorer-label, posterior,
+  source-count, or source-case-ID fields.
+
+Results:
+
+| Policy | F1 | Precision | Recall | Hits | Noise | Published |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Online incumbent | 0.516 | 0.724 | 0.401 | 55 | 21 | 76 |
+| Refute-only t0.60 | 0.512 | 0.730 | 0.394 | 54 | 20 | 74 |
+| Support-only t0.80 | 0.505 | 0.726 | 0.387 | 53 | 20 | 73 |
+
+Scorer-aligned refuter quality:
+
+```text
+essential-hit claims: 17
+removable-noise claims: 13
+verdicts: 28 support / 2 refute / 0 abstain
+removable-noise refuted: 1 / 13 (7.7%)
+essential hits refuted: 1 / 17 (5.9%)
+```
+
+Decision:
+
+```text
+Reject claim refuter v0.
+Do not promote or run a fresh slice.
+```
+
+What worked:
+
+- The isolated repository substrate and replay boundary worked with no failures.
+- Supported verdicts carried concrete diff, caller, contract, and test evidence.
+- One refutation correctly traced an apparent unsupported aggregate through
+  builder inheritance to the shared converter and found a covering endpoint
+  test.
+- The run completed as a single frozen ablation and produced reusable cached
+  verdicts.
+
+What failed:
+
+- A generic single-claim defense prompt remained strongly confirmation-biased:
+  28 of 30 claims were supported.
+- The two refutations split evenly between removable noise and an essential hit.
+- Precision improved only 0.6 points while recall and F1 fell.
+- Per-claim latency was research-grade rather than suitable for every product
+  comment.
+
+Next implication:
+
+- Do not make the generic refuter stronger or more expensive yet.
+- The refuter cannot identify duplicate-root-cause noise when it sees only one
+  claim. The next controlled variable is a novelty/refutation gate that compares
+  a marginal claim with already-selected findings from the same PR.
+- Preserve the 51.6% online incumbent.
+
 ## 2026-07-10: Product Goal, Incumbent Audit, And Online Publisher Baseline
 
 Question:
